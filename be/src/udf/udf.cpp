@@ -25,6 +25,7 @@
 
 #include "runtime/decimal_value.h"
 #include "runtime/decimalv2_value.h"
+#include "runtime/descriptors.h"
 
 // Be careful what this includes since this needs to be linked into the UDF's
 // binary. For example, it would be unfortunate if they had a random dependency
@@ -198,6 +199,36 @@ doris_udf::FunctionContext* FunctionContextImpl::create_context(
     return ctx;
 }
 
+doris_udf::FunctionContext* FunctionContextImpl::create_context(
+            RuntimeState* state, MemPool* pool,
+            const std::vector<doris_udf::FunctionContext::TypeDesc>& return_type,
+            const std::vector<doris_udf::FunctionContext::TypeDesc>& arg_types,
+            int varargs_buffer_size, bool debug) {
+    doris_udf::FunctionContext* ctx = new doris_udf::FunctionContext();
+    ctx->_impl->_state = state;
+    ctx->_impl->_pool = new FreePool(pool);
+    //set _intermediate_type and _return_type invalid
+    doris_udf::FunctionContext::TypeDesc invalid_type;
+    invalid_type.type = doris_udf::FunctionContext::INVALID_TYPE;
+    invalid_type.precision = 0;
+    invalid_type.scale = 0;
+    ctx->_impl->_intermediate_type = invalid_type;
+    ctx->_impl->_return_type = invalid_type;
+
+    //TODO : construct TupleDescriptor
+    //ctx->_impl->_record_store = RecordStoreImpl::create_record_store(pool, _desc_tbl->get_tuple_descriptor(0));
+
+    ctx->_impl->_arg_types = arg_types;
+    ctx->_impl->_varargs_buffer =
+            reinterpret_cast<uint8_t*>(malloc(varargs_buffer_size));
+    ctx->_impl->_varargs_buffer_size = varargs_buffer_size;
+    ctx->_impl->_debug = debug;
+    VLOG_ROW << "Created FunctionContext: " << ctx
+             << " with pool " << ctx->_impl->_pool;
+    return ctx;
+}
+
+
 FunctionContext* FunctionContextImpl::clone(MemPool* pool) {
     doris_udf::FunctionContext* new_context =
         create_context(_state, pool, _intermediate_type, _return_type, _arg_types,
@@ -362,6 +393,58 @@ bool FunctionContext::add_warning(const char* warning_msg) {
         std::cerr << ss.str() << std::endl;
         return true;
     }
+}
+
+//Record
+void Record::set_null(int idx) {
+    auto* descriptor = *reinterpret_cast<doris::TupleDescriptor**>(this - sizeof(doris::TupleDescriptor*));
+    doris::NullIndicatorOffset offset = descriptor->slots()[idx]->null_indicator_offset();
+    char *null_indicator_byte = reinterpret_cast<char *>(this) + offset.byte_offset;
+    *null_indicator_byte |= offset.bit_mask;
+}
+
+void Record::set_int(int idx, int val) {
+    auto* descriptor = *reinterpret_cast<doris::TupleDescriptor**>(this - sizeof(doris::TupleDescriptor*));
+    uint8_t *dst = (uint8_t*) this + descriptor->slots()[idx]->tuple_offset();
+    memcpy(dst, reinterpret_cast<uint8_t*>(&val), sizeof(int));
+}
+
+void Record::set_string(int idx, const uint8_t *ptr, size_t len) {
+    auto* descriptor = *reinterpret_cast<doris::TupleDescriptor**>(this - sizeof(doris::TupleDescriptor*));
+    uint8_t *dst = (uint8_t *) this + descriptor->slots()[idx]->tuple_offset();
+    memcpy(dst, &ptr, sizeof(char*));
+    memcpy(dst + sizeof(char*), reinterpret_cast<uint8_t*>(&len), sizeof(size_t));
+}
+
+//RecordStore
+RecordStore::RecordStore() : _impl(new doris::RecordStoreImpl()) {}
+
+Record *RecordStore::allocate_record() {
+    return _impl->allocate_record();
+}
+
+void RecordStore::append_record(Record *record) {
+    _impl->append_record(record);
+}
+
+void RecordStore::free_record(Record *record) {
+    _impl->free_record(record);
+}
+
+void* RecordStore::allocate(size_t size) {
+    return (void*)_impl->allocate(size);
+}
+
+size_t RecordStore::size() {
+    return _impl->size();
+}
+
+Record* RecordStore::get(int idx) {
+    return _impl->get(idx);
+}
+
+RecordStore::~RecordStore() {
+    delete _impl;
 }
 
 StringVal::StringVal(FunctionContext* context, int len) : 
