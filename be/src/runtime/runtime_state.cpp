@@ -233,7 +233,7 @@ Status RuntimeState::init_mem_trackers(const TUniqueId& query_id) {
     mem_tracker_counter->set(bytes_limit);
 
     _query_mem_tracker.reset(
-            new MemTracker(bytes_limit, runtime_profile()->name(), _exec_env->process_mem_tracker()));
+            new MemTracker(bytes_limit + 1, runtime_profile()->name(), _exec_env->process_mem_tracker()));
     _instance_mem_tracker.reset(
             new MemTracker(&_profile, -1, runtime_profile()->name(), _query_mem_tracker.get()));
 

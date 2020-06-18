@@ -125,6 +125,9 @@ public:
             int64_t byte_limit, MemTracker* parent);
 
     void consume(int64_t bytes) {
+        if (limit() == 83886081) {
+            LOG(INFO) << "happen lee:" << bytes;
+        }
         if (bytes <= 0) {
             if (bytes < 0) release(-bytes);
             return;
