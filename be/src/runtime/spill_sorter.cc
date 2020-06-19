@@ -1148,7 +1148,7 @@ Status SpillSorter::input_done() {
         // TODO: Attempt to allocate more memory before doing intermediate merges. This may
         // be possible if other operators have relinquished memory after the sort has built
         // its runs.
-        if (min_buffers_for_merge > _block_mgr->available_allocated_buffers()) {
+        if (min_buffers_for_merge > _block_mgr->available_buffers(_block_mgr_client)) {
             DCHECK(unpinned_final);
             RETURN_IF_ERROR(merge_intermediate_runs());
         }
@@ -1238,7 +1238,7 @@ uint64_t SpillSorter::estimate_merge_mem(
 Status SpillSorter::merge_intermediate_runs() {
     int blocks_per_run = _has_var_len_slots ? 2 : 1;
     int max_runs_per_final_merge =
-            _block_mgr->available_allocated_buffers() / blocks_per_run;
+            _block_mgr->available_buffers(_block_mgr_client) / blocks_per_run;
 
     // During an intermediate merge, blocks from the output sorted run will have to be pinned.
     int max_runs_per_intermediate_merge = max_runs_per_final_merge - 1;
@@ -1331,4 +1331,4 @@ Status SpillSorter::create_merger(int num_runs) {
     return Status::OK();
 }
 
-} // namespace impala
+} // namespace doris

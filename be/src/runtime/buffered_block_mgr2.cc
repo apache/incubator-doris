@@ -914,11 +914,11 @@ void BufferedBlockMgr2::delete_block(Block* block) {
         if (block->is_max_size()) {
             --_total_pinned_buffers;
         }
-        block->_is_pinned = false;
         block->_client->unpin_buffer(block->_buffer_desc);
-        if (block->_client->_num_pinned_buffers < block->_client->_num_reserved_buffers) {
+        if (block->is_max_size() && block->_client->_num_pinned_buffers < block->_client->_num_reserved_buffers) {
             ++_unfullfilled_reserved_buffers;
         }
+        block->_is_pinned = false;
     } else if (_unpinned_blocks.contains(block)) {
         // Remove block from unpinned list.
         _unpinned_blocks.remove(block);
