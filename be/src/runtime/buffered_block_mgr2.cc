@@ -915,6 +915,7 @@ void BufferedBlockMgr2::delete_block(Block* block) {
             --_total_pinned_buffers;
         }
         block->_client->unpin_buffer(block->_buffer_desc);
+	// Only block is max size is need to change _unfullfilled_reserved_buffers
         if (block->is_max_size() && block->_client->_num_pinned_buffers < block->_client->_num_reserved_buffers) {
             ++_unfullfilled_reserved_buffers;
         }

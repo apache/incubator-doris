@@ -266,13 +266,6 @@ Status PartitionedAggregationNode::open(RuntimeState* state) {
   RETURN_IF_ERROR(ExecNode::open(state));
   RETURN_IF_ERROR(state->block_mgr2()->register_client(MinRequiredBuffers(), mem_tracker(), state, &client_));
 
-  // Claim reservation after the child has been opened to reduce the peak reservation
-  // requirement.
-  if (!_buffer_pool_client.is_registered() && !grouping_exprs_.empty()) {
-    DCHECK_GE(_resource_profile.min_reservation, MinReservation());
-    RETURN_IF_ERROR(claim_buffer_reservation(state));
-  }
-
   if (ht_ctx_.get() != nullptr) RETURN_IF_ERROR(ht_ctx_->Open(state));
   RETURN_IF_ERROR(NewAggFnEvaluator::Open(agg_fn_evals_, state));
   if (grouping_exprs_.empty()) {
@@ -285,10 +278,6 @@ Status PartitionedAggregationNode::open(RuntimeState* state) {
     singleton_output_tuple_returned_ = false;
   } else {
     if (ht_allocator_ == nullptr) {
-      // Allocate 'serialize_stream_' and 'ht_allocator_' on the first Open() call.
-      ht_allocator_.reset(new Suballocator(state_->exec_env()->buffer_pool(),
-          &_buffer_pool_client, _resource_profile.spillable_buffer_size));
-
       if (!is_streaming_preagg_ && needs_serialize_) {
         serialize_stream_.reset(new BufferedTupleStream2(state, intermediate_row_desc_, state->block_mgr2(),
             client_, false, false));
@@ -846,32 +835,10 @@ Status PartitionedAggregationNode::Partition::Spill(bool more_aggregate_rows) {
   hash_tbl->Close();
   hash_tbl.reset();
 
-  // Unpin the stream to free memory, but leave a write buffer in place so we can
-  // continue appending rows to one of the streams in the partition.
-//  DCHECK(aggregated_row_stream->has_write_iterator());
-//  DCHECK(!unaggregated_row_stream->has_write_iterator());
-//  bool got_buffer = true;
-//  if (aggregated_row_stream->using_small_buffers()) {
-//      RETURN_IF_ERROR(aggregated_row_stream->switch_to_io_buffers(&got_buffer));
-//  }
-
   if (more_aggregate_rows) {
     aggregated_row_stream->unpin_stream();
   } else {
     aggregated_row_stream->unpin_stream(true);
-//    if (got_buffer && unaggregated_row_stream->using_small_buffers()) {
-//        RETURN_IF_ERROR(unaggregated_row_stream->switch_to_io_buffers(&got_buffer));
-//    }
-//
-//    if (!got_buffer) {
-//        // We'll try again to get the buffers when the stream fills up the small buffers.
-//        VLOG_QUERY << "Not enough memory to switch to IO-sized buffer for partition "
-//                   << this << " of agg=" << parent->id_ << " agg small buffers="
-//                   << aggregated_row_stream->using_small_buffers()
-//                   << " unagg small buffers="
-//                   << unaggregated_row_stream->using_small_buffers();
-//        VLOG_FILE << GetStackTrace();
-//    }
   }
 
   COUNTER_UPDATE(parent->num_spilled_partitions_, 1);
@@ -1148,6 +1115,7 @@ Status PartitionedAggregationNode::CreateHashPartitions(
       Partition* new_partition = partition_pool_->add(new Partition(this, level, i));
       ++num_partitions_created;
       hash_partitions_.push_back(new_partition);
+      // Only the first level we use small IO buffer to save memmory of aggregation
       RETURN_IF_ERROR(new_partition->InitStreams(level == 0 && single_partition_idx == -1));
     } else {
       hash_partitions_.push_back(nullptr);
@@ -1220,10 +1188,7 @@ Status PartitionedAggregationNode::NextPartition() {
     // All partitions are in memory. Release reservation that was used for previous
     // partitions that is no longer needed. If we have spilled partitions, we want to
     // hold onto all reservation in case it is needed to process the spilled partitions.
-    DCHECK(!_buffer_pool_client.has_unpinned_pages());
-    Status status = release_unused_reservation();
-    DCHECK(status.ok()) << "Should not fail - all partitions are in memory so there are "
-                        << "no unpinned pages. " << status.get_error_msg();
+    state_->block_mgr2()->clear_reservations(client_);
   }
 
   // Keep looping until we get to a partition that fits in memory.
@@ -1337,8 +1302,6 @@ Status PartitionedAggregationNode::RepartitionSpilledPartition() {
     if (hash_partition->unaggregated_row_stream->using_small_buffers()) {
         RETURN_IF_ERROR(hash_partition->unaggregated_row_stream->switch_to_io_buffers(&got_buffer));
     }
-//    DCHECK(got_buffer)
-//        << "Accounted in min reservation" << _buffer_pool_client.DebugString();
   }
   RETURN_IF_ERROR(ProcessStream<false>(partition->unaggregated_row_stream.get()));
 
@@ -1404,7 +1367,7 @@ Status PartitionedAggregationNode::SpillPartition(bool more_aggregate_rows) {
     }
   }
   DCHECK_NE(partition_idx, -1) << "Should have been able to spill a partition to "
-                               << "reclaim memory: " << _buffer_pool_client.DebugString();
+                               << "reclaim memory: " << client_->dubug_string();
   // Remove references to the destroyed hash table from 'hash_tbls_'.
   // Additionally, we might be dealing with a rebuilt spilled partition, where all
   // partitions point to a single in-memory partition. This also ensures that 'hash_tbls_'
