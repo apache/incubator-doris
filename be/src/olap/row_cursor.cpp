@@ -37,11 +37,13 @@ RowCursor::~RowCursor() {
     delete [] _variable_buf;
 }
 
-OLAPStatus RowCursor::_init(const std::vector<TabletColumn>& schema,
-                            const std::vector<uint32_t>& columns) {
-    _schema.reset(new Schema(schema, columns));
+OLAPStatus RowCursor::_init(const std::vector<TabletColumn>& columns,
+                            const std::vector<uint32_t>& columnIds) {
+    auto schema = new Schema();
+    RETURN_NOT_OK(schema->init(columns, columnIds));
+    _schema.reset(schema);
     _variable_len = 0;
-    for (auto cid : columns) {
+    for (auto cid : columnIds) {
         if (_schema->column(cid) == nullptr) {
             LOG(WARNING) << "Fail to create field.";
             return OLAP_ERR_INIT_FAILED;

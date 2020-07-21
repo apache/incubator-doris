@@ -35,10 +35,10 @@ class Field;
 class RowCursor {
 public:
     RowCursor();
-    
+
     // 遍历销毁field指针
     ~RowCursor();
-    
+
     // 根据传入schema的创建RowCursor
     OLAPStatus init(const TabletSchema& schema);
     OLAPStatus init(const std::vector<TabletColumn>& schema);

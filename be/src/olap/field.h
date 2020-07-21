@@ -496,7 +496,13 @@ public:
             }
         }
 
-        // for value column
+        // check aggregate info first for value column
+        auto aggregate_info = get_aggregate_info(column.aggregation(), column.type());
+        if (aggregate_info == nullptr) {
+            LOG(WARNING) << "failed to get aggregate info with aggregation type=" << column.aggregation()
+                         << " column type=" << column.type();
+	    return nullptr;
+        }
         switch (column.aggregation()) {
             case OLAP_FIELD_AGGREGATION_NONE:
             case OLAP_FIELD_AGGREGATION_SUM:
