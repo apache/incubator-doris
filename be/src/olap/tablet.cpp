@@ -48,9 +48,6 @@ using std::sort;
 using std::string;
 using std::vector;
 
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(flush_bytes, MetricUnit::BYTES);
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(flush_count, MetricUnit::OPERATIONS);
-
 TabletSharedPtr Tablet::create_tablet_from_meta(TabletMetaSharedPtr tablet_meta,
                                                 DataDir* data_dir) {
     return std::make_shared<Tablet>(tablet_meta, data_dir);
@@ -68,9 +65,6 @@ Tablet::Tablet(TabletMetaSharedPtr tablet_meta, DataDir* data_dir,
         _cumulative_compaction_type(cumulative_compaction_type) {
     // change _rs_graph to _timestamped_version_tracker
     _timestamped_version_tracker.construct_versioned_tracker(_tablet_meta->all_rs_metas());
-
-    METRIC_REGISTER(_metric_entity, flush_bytes);
-    METRIC_REGISTER(_metric_entity, flush_count);
 }
 
 OLAPStatus Tablet::_init_once_action() {
@@ -78,11 +72,10 @@ OLAPStatus Tablet::_init_once_action() {
     VLOG(3) << "begin to load tablet. tablet=" << full_name()
             << ", version_size=" << _tablet_meta->version_count();
 
-    std::shared_ptr<Tablet> this_ptr = std::dynamic_pointer_cast<Tablet>(shared_from_this());
     // init cumulative compaction policy by type
     _cumulative_compaction_policy =
             CumulativeCompactionPolicyFactory::create_cumulative_compaction_policy(
-                    _cumulative_compaction_type, this_ptr);
+                    _cumulative_compaction_type);
 
     for (const auto& rs_meta :  _tablet_meta->all_rs_metas()) {
         Version version = rs_meta->version();
@@ -790,7 +783,7 @@ void Tablet::calculate_cumulative_point() {
     WriteLock wrlock(&_meta_lock);
 
     int64_t ret_cumulative_point;
-    _cumulative_compaction_policy->calculate_cumulative_point(
+    _cumulative_compaction_policy->calculate_cumulative_point(this, 
             _tablet_meta->all_rs_metas(), _cumulative_point, &ret_cumulative_point);
 
     if(ret_cumulative_point == K_INVALID_CUMULATIVE_POINT) {

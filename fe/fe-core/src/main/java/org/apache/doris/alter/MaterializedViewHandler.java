@@ -341,6 +341,9 @@ public class MaterializedViewHandler extends AlterHandler {
         String newStorageFormatIndexName = NEW_STORAGE_FORMAT_INDEX_NAME_PREFIX + olapTable.getName();
         if (mvName.equals(newStorageFormatIndexName)) {
             mvJob.setStorageFormat(TStorageFormat.V2);
+        } else {
+            // use base table's storage foramt as the mv's format
+            mvJob.setStorageFormat(olapTable.getStorageFormat());
         }
 
         /*
@@ -472,6 +475,9 @@ public class MaterializedViewHandler extends AlterHandler {
                 newMVColumns.add(mvColumnItem.toMVColumn(olapTable));
             }
         }
+        if (KeysType.UNIQUE_KEYS == olapTable.getKeysType() && olapTable.hasDeleteSign()) {
+            newMVColumns.add(new Column(olapTable.getDeleteSignColumn()));
+        }
         return newMVColumns;
     }
 
@@ -535,7 +541,6 @@ public class MaterializedViewHandler extends AlterHandler {
             if (!hasKey) {
                 throw new DdlException("No key column is found");
             }
-
             if (KeysType.UNIQUE_KEYS == keysType || meetReplaceValue) {
                 // rollup of unique key table or rollup with REPLACE value
                 // should have all keys of base table

@@ -317,12 +317,22 @@ enum TEtlState {
 }
 
 enum TTableType {
-    MYSQL_TABLE,
+    MYSQL_TABLE, // Deprecated
+    ODBC_TABLE, 
     OLAP_TABLE,
     SCHEMA_TABLE,
     KUDU_TABLE, // Deprecated
     BROKER_TABLE,
     ES_TABLE
+}
+
+enum TOdbcTableType {
+    MYSQL,
+    ORACLE,
+    POSTGRESQL,
+    SQLSERVER,
+    REDIS,
+    MONGODB
 }
 
 enum TKeysType {
@@ -375,6 +385,12 @@ enum TLoadType {
 enum TLoadSourceType {
     RAW,
     KAFKA,
+}
+
+enum TMergeType {
+  APPEND,
+  MERGE,
+  DELETE
 }
 
 // represent a user identity
