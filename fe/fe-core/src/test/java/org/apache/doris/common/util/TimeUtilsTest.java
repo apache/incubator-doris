@@ -45,7 +45,7 @@ public class TimeUtilsTest {
         TimeZone tz = TimeZone.getTimeZone(ZoneId.of("Asia/Shanghai"));
         new Expectations(timeUtils) {
             {
-                TimeUtils.getTimeZone();
+                TimeUtils.getSessionTimeZone();
                 minTimes = 0;
                 result = tz;
             }
@@ -161,7 +161,9 @@ public class TimeUtilsTest {
     @Test
     public void testTimezone() throws AnalysisException {
         try {
-            Assert.assertEquals("CST", TimeUtils.checkTimeZoneValidAndStandardize("CST"));
+            Assert.assertEquals("Asia/Shanghai", TimeUtils.checkTimeZoneValidAndStandardize("CST"));
+            Assert.assertEquals("Africa/Abidjan", TimeUtils.checkTimeZoneValidAndStandardize("UTC"));
+            Assert.assertEquals("Asia/Shanghai", TimeUtils.checkTimeZoneValidAndStandardize("PRC"));
             Assert.assertEquals("+08:00", TimeUtils.checkTimeZoneValidAndStandardize("+08:00"));
             Assert.assertEquals("+08:00", TimeUtils.checkTimeZoneValidAndStandardize("+8:00"));
             Assert.assertEquals("-08:00", TimeUtils.checkTimeZoneValidAndStandardize("-8:00"));

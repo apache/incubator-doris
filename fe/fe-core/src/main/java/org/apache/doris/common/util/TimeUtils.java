@@ -29,6 +29,7 @@ import org.apache.doris.qe.VariableMgr;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.base.Strings;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -50,12 +51,18 @@ public class TimeUtils {
     private static final Logger LOG = LogManager.getLogger(TimeUtils.class);
 
     public static final String DEFAULT_TIME_ZONE = "Asia/Shanghai";
+    public static final String DEFAULT_UTC_TIME_ZONE = "Africa/Abidjan";
 
     private static final TimeZone TIME_ZONE;
 
-    // set CST to +08:00 instead of America/Chicago
-    public static final ImmutableMap<String, String> timeZoneAliasMap = ImmutableMap.of(
-            "CST", DEFAULT_TIME_ZONE, "PRC", DEFAULT_TIME_ZONE);
+    /**
+      * set CST to +08:00 instead of America/Chicago
+      * set UTC to +00:00 whose TZ database name is Africa/Abidjan
+      * reference: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+      * NOTICE: If we add some alias, we should add UT in be/test/util/time_zone_test.cpp to ensure that the timezone is compatible in BE
+      */
+    private static final ImmutableMap<String, String> TIMEZONE_ALIAS_MAP = ImmutableMap.of(
+            "CST", DEFAULT_TIME_ZONE, "PRC", DEFAULT_TIME_ZONE, "UTC", DEFAULT_UTC_TIME_ZONE);
 
     // NOTICE: Date formats are not synchronized.
     // it must be used as synchronized externally.
@@ -117,29 +124,28 @@ public class TimeUtils {
         return DATETIME_FORMAT.format(new Date());
     }
 
-    public static TimeZone getTimeZone() {
+    public static TimeZone getSessionTimeZone() {
         String timezone;
         if (ConnectContext.get() != null) {
             timezone = ConnectContext.get().getSessionVariable().getTimeZone();
         } else {
             timezone = VariableMgr.getDefaultSessionVariable().getTimeZone();
         }
-        return TimeZone.getTimeZone(ZoneId.of(timezone, timeZoneAliasMap));
+        return TimeZone.getTimeZone(ZoneId.of(timezone, TIMEZONE_ALIAS_MAP));
+    }
+
+    public static TimeZone getOrSessionTimeZone(String timeZone) {
+        if (Strings.isNullOrEmpty(timeZone)) {
+            return getSessionTimeZone();
+        }
+        return TimeZone.getTimeZone(ZoneId.of(timeZone, TIMEZONE_ALIAS_MAP));
     }
 
     // return the time zone of current system
     public static TimeZone getSystemTimeZone() {
-        return TimeZone.getTimeZone(ZoneId.of(ZoneId.systemDefault().getId(), timeZoneAliasMap));
+        return TimeZone.getTimeZone(ZoneId.of(ZoneId.systemDefault().getId(), TIMEZONE_ALIAS_MAP));
     }
 
-    // get time zone of given zone name, or return system time zone if name is null.
-    public static TimeZone getOrSystemTimeZone(String timeZone) {
-        if (timeZone == null) {
-            return getSystemTimeZone();
-        }
-        return TimeZone.getTimeZone(ZoneId.of(timeZone, timeZoneAliasMap));
-    }
-    
     public static String longToTimeString(long timeStamp, SimpleDateFormat dateFormat) {
         if (timeStamp <= 0L) {
             return FeConstants.null_string;
@@ -148,7 +154,7 @@ public class TimeUtils {
     }
 
     public static synchronized String longToTimeString(long timeStamp) {
-        TimeZone timeZone = getTimeZone();
+        TimeZone timeZone = getSessionTimeZone();
         SimpleDateFormat dateFormatTimeZone = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         dateFormatTimeZone.setTimeZone(timeZone);
         return longToTimeString(timeStamp, dateFormatTimeZone);
@@ -156,8 +162,7 @@ public class TimeUtils {
     
     public static synchronized Date getTimeAsDate(String timeString) {
         try {
-            Date date = TIME_FORMAT.parse(timeString);
-            return date;
+            return TIME_FORMAT.parse(timeString);
         } catch (ParseException e) {
             LOG.warn("invalid time format: {}", timeString);
             return null;
@@ -207,7 +212,7 @@ public class TimeUtils {
         return format(date, type.getPrimitiveType());
     }
 
-    /*
+    /**
      * only used for ETL
      */
     public static long dateTransform(long time, PrimitiveType type) {
@@ -246,7 +251,15 @@ public class TimeUtils {
         return d.getTime();
     }
 
-    // Check if the time zone_value is valid
+    public static boolean containsInTimeZoneAliasMap(String timezone) {
+        return TIMEZONE_ALIAS_MAP.containsKey(timezone);
+    }
+
+    /**
+     * Check if the time zone_value is valid
+     * Unify return TimeZone string from ZoneId.getId()
+     * eg: input: CST --> output: Asia/Shanghai, input: UTC --> output: Africa/Abidjan
+     */
     public static String checkTimeZoneValidAndStandardize(String value) throws DdlException {
         try {
             if (value == null) {
@@ -256,7 +269,7 @@ public class TimeUtils {
             Matcher matcher = TIMEZONE_OFFSET_FORMAT_REG.matcher(value);
             // it supports offset and region timezone type, "CST" use here is compatibility purposes.
             boolean match = matcher.matches();
-            if (!value.contains("/") && !value.equals("CST") && !match) {
+            if (!value.contains("/") && !containsInTimeZoneAliasMap(value) && !match) {
                 ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_TIME_ZONE, value);
             }
             if (match) {
@@ -273,8 +286,7 @@ public class TimeUtils {
                     ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_TIME_ZONE, value);
                 }
             }
-            ZoneId.of(value, timeZoneAliasMap);
-            return value;
+            return ZoneId.of(value, TIMEZONE_ALIAS_MAP).getId();
         } catch (DateTimeException ex) {
             ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_TIME_ZONE, value);
         }
