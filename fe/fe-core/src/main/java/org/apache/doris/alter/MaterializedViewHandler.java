@@ -196,7 +196,7 @@ public class MaterializedViewHandler extends AlterHandler {
 
         long baseIndexId = checkAndGetBaseIndex(baseIndexName, olapTable);
         // Step1.3: mv clause validation
-        List<Column> mvColumns = checkAndPrepareMaterializedView(addMVClause, olapTable);
+        List<Column> mvColumns = checkAndPrepareMaterializedView(addMVClause, db, olapTable);
 
         // Step2: create mv job
         RollupJobV2 rollupJobV2 = createMaterializedViewJob(mvIndexName, baseIndexName, mvColumns, addMVClause
@@ -418,12 +418,28 @@ public class MaterializedViewHandler extends AlterHandler {
         return mvJob;
     }
 
-    private List<Column> checkAndPrepareMaterializedView(CreateMaterializedViewStmt addMVClause, OlapTable olapTable)
+    private List<Column> checkAndPrepareMaterializedView(CreateMaterializedViewStmt addMVClause, Database db, OlapTable olapTable)
             throws DdlException {
         // check if mv index already exists
         if (olapTable.hasMaterializedIndex(addMVClause.getMVName())) {
             throw new DdlException("Materialized view[" + addMVClause.getMVName() + "] already exists");
         }
+
+        for (Table tbl : db.getTables()) {
+            if (tbl.getType() == Table.TableType.OLAP) {
+                if (addMVClause.getMVName().equals(tbl.getName())) {
+                    throw new DdlException("Table [" + addMVClause.getMVName() + "] already exists, ");
+                }
+
+                List<MaterializedIndex> visibleMaterializedViews = ((OlapTable) tbl).getVisibleIndex();
+                for (MaterializedIndex mvIdx : visibleMaterializedViews) {
+                    if (((OlapTable) tbl).getIndexNameById(mvIdx.getId()).equals(addMVClause.getMVName())) {
+                        throw new DdlException("Materialized view[" + addMVClause.getMVName() + "] already exists");
+                    }
+                }
+            }
+        }
+
         // check if mv columns are valid
         // a. Aggregate or Unique table:
         //     1. For aggregate table, mv columns with aggregate function should be same as base schema
@@ -732,7 +748,7 @@ public class MaterializedViewHandler extends AlterHandler {
             editLog.logDropRollup(new DropInfo(db.getId(), olapTable.getId(), mvIndexId, false));
             LOG.info("finished drop materialized view [{}] in table [{}]", mvName, olapTable.getName());
         } catch (MetaNotFoundException e) {
-            if (dropMaterializedViewStmt.isIfExists()) {
+            if (dropMaterializedViewStmt.isSetIfExists()) {
                 LOG.info(e.getMessage());
             } else {
                 throw e;
@@ -1221,6 +1237,50 @@ public class MaterializedViewHandler extends AlterHandler {
         // handle old alter job
         if (rollupJob != null && rollupJob.getState() == JobState.CANCELLED) {
             jobDone(rollupJob);
+        }
+    }
+
+    public void cancelMV(CancelStmt stmt) throws DdlException {
+        CancelAlterTableStmt cancelAlterTableStmt = (CancelAlterTableStmt) stmt;
+
+        String dbName = cancelAlterTableStmt.getDbName();
+        String tableName = cancelAlterTableStmt.getTableName();
+        Preconditions.checkState(!Strings.isNullOrEmpty(dbName));
+        Preconditions.checkState(!Strings.isNullOrEmpty(tableName));
+
+        Database db = Catalog.getCurrentCatalog().getDb(dbName);
+        if (db == null) {
+            ErrorReport.reportDdlException(ErrorCode.ERR_BAD_DB_ERROR, dbName);
+        }
+
+        AlterJobV2 materializedViewJob = null;
+        db.writeLock();
+        try {
+            for (Table table : db.getTables()) {
+                if (table instanceof OlapTable) {
+                    List<AlterJobV2> rollupJobV2List = getUnfinishedAlterJobV2ByTableId(table.getId());
+                    for (AlterJobV2 alterJobV2 : rollupJobV2List) {
+                        if (alterJobV2 instanceof RollupJobV2) {
+                            if (((RollupJobV2) alterJobV2).getRollupIndexName().equals(tableName)) {
+                                materializedViewJob = alterJobV2;
+                            }
+                        }
+                    }
+                }
+            }
+        } finally {
+            db.writeUnlock();
+        }
+
+        if (materializedViewJob == null) {
+            throw new DdlException("Table[" + tableName + "] is not under ROLLUP. "
+                    + "Use 'ALTER TABLE DROP ROLLUP' if you want to.");
+        } else {
+            // alter job v2's cancel must be called outside the database lock
+            materializedViewJob.cancel("user cancelled");
+            if (materializedViewJob.isDone()) {
+                onJobDone(materializedViewJob);
+            }
         }
     }
 

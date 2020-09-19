@@ -38,6 +38,7 @@ import org.apache.doris.analysis.ShowDbStmt;
 import org.apache.doris.analysis.ShowDeleteStmt;
 import org.apache.doris.analysis.ShowDynamicPartitionStmt;
 import org.apache.doris.analysis.ShowEnginesStmt;
+import org.apache.doris.analysis.ShowMaterializedView;
 import org.apache.doris.analysis.ShowResourcesStmt;
 import org.apache.doris.analysis.ShowExportStmt;
 import org.apache.doris.analysis.ShowFrontendsStmt;
@@ -54,7 +55,6 @@ import org.apache.doris.analysis.ShowProcesslistStmt;
 import org.apache.doris.analysis.ShowRepositoriesStmt;
 import org.apache.doris.analysis.ShowRestoreStmt;
 import org.apache.doris.analysis.ShowRolesStmt;
-import org.apache.doris.analysis.ShowRollupStmt;
 import org.apache.doris.analysis.ShowRoutineLoadStmt;
 import org.apache.doris.analysis.ShowRoutineLoadTaskStmt;
 import org.apache.doris.analysis.ShowSmallFilesStmt;
@@ -79,6 +79,7 @@ import org.apache.doris.catalog.Index;
 import org.apache.doris.catalog.MaterializedIndex;
 import org.apache.doris.catalog.MaterializedIndex.IndexExtState;
 import org.apache.doris.catalog.MetadataViewer;
+import org.apache.doris.catalog.MaterializedIndexMeta;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Partition;
 import org.apache.doris.catalog.Replica;
@@ -165,8 +166,8 @@ public class ShowExecutor {
     }
 
     public ShowResultSet execute() throws AnalysisException {
-        if (stmt instanceof ShowRollupStmt) {
-            handleShowRollup();
+        if (stmt instanceof ShowMaterializedView) {
+            handleShowMaterializedView();
         } else if (stmt instanceof ShowAuthorStmt) {
             handleShowAuthor();
         } else if (stmt instanceof ShowProcStmt) {
@@ -266,11 +267,60 @@ public class ShowExecutor {
         return resultSet;
     }
 
-    private void handleShowRollup() {
-        // TODO: not implemented yet
-        ShowRollupStmt showRollupStmt = (ShowRollupStmt) stmt;
+    private void handleShowMaterializedView() throws AnalysisException {
+        String dbName = ((ShowMaterializedView) stmt).getDb();
         List<List<String>> rowSets = Lists.newArrayList();
-        resultSet = new ShowResultSet(showRollupStmt.getMetaData(), rowSets);
+
+        Database db = Catalog.getCurrentCatalog().getDb(dbName);
+        if (db == null) {
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_BAD_DB_ERROR, dbName);
+        }
+        db.readLock();
+        try {
+            for (Table table : db.getTables()) {
+                if (table.getType() == Table.TableType.OLAP) {
+                    OlapTable olapTable = (OlapTable) table;
+                    List<MaterializedIndex> visibleMaterializedViews = olapTable.getVisibleIndex();
+                    long baseIdx = olapTable.getBaseIndexId();
+
+                    for (MaterializedIndex mvIdx : visibleMaterializedViews) {
+                        if (baseIdx == mvIdx.getId()) {
+                            continue;
+                        }
+                        ArrayList<String> resultRow = new ArrayList<>();
+                        MaterializedIndexMeta mvMeta = olapTable.getVisibleIndexIdToMeta().get(mvIdx.getId());
+                        resultRow.add(String.valueOf(mvIdx.getId()));
+                        resultRow.add(olapTable.getIndexNameById(mvIdx.getId()));
+                        resultRow.add(dbName);
+                        if (mvMeta.getOriginStmt() == null) {
+                            StringBuilder originStmtBuilder = new StringBuilder("create materialized view " + olapTable.getIndexNameById(mvIdx.getId()) + " as select ");
+                            String groupByString = "";
+                            for (Column column : mvMeta.getSchema()) {
+                                if (column.isKey()) {
+                                    groupByString += column.getName() + ",";
+                                }
+                            }
+                            originStmtBuilder.append(groupByString);
+                            for (Column column : mvMeta.getSchema()) {
+                                if (!column.isKey()) {
+                                    originStmtBuilder.append(column.getAggregationType().toString()).append("(").append(column.getName()).append(")").append(",");
+                                }
+                            }
+                            originStmtBuilder.delete(originStmtBuilder.length() - 1, originStmtBuilder.length());
+                            originStmtBuilder.append(" from ").append(olapTable.getName()).append(" group by ").append(groupByString);
+                            originStmtBuilder.delete(originStmtBuilder.length() - 1, originStmtBuilder.length());
+                            resultRow.add(originStmtBuilder.toString());
+                        } else {
+                            resultRow.add(mvMeta.getOriginStmt());
+                        }
+                        resultRow.add(String.valueOf(mvIdx.getRowCount()));
+                        rowSets.add(resultRow);
+                    }
+                }
+            }
+        } finally {
+            db.readUnlock();
+        }
     }
 
     // Handle show authors

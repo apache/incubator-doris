@@ -117,6 +117,14 @@ public class MaterializedIndexMeta implements Writable, GsonPostProcessable {
         return schemaVersion;
     }
 
+    public String getOriginStmt() {
+        if (defineStmt == null) {
+            return null;
+        } else {
+            return defineStmt.originStmt;
+        }
+    }
+
     private void setColumnsDefineExpr(Map<String, Expr> columnNameToDefineExpr) {
         for (Map.Entry<String, Expr> entry : columnNameToDefineExpr.entrySet()) {
             for (Column column : schema) {
