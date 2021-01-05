@@ -756,7 +756,7 @@ TabletSharedPtr TabletManager::find_best_tablet_to_compaction(
                 double tablet_score =
                         config::compaction_tablet_scan_frequency_factor * scan_frequency +
                         config::compaction_tablet_compaction_score_factor *
-                                current_compaction_score;
+                        current_compaction_score;
                 if (tablet_score > highest_score) {
                     highest_score = tablet_score;
                     compaction_score = current_compaction_score;
