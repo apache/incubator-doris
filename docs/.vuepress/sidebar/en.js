@@ -186,6 +186,7 @@ module.exports = [
       "sql-mode",
       "time-zone",
       "variables",
+      "update",
     ],
     sidebarDepth: 1,
   },

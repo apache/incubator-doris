@@ -1435,4 +1435,7 @@ public class Config extends ConfigBase {
      */
     @ConfField(mutable = true)
     public static int default_max_query_instances = -1;
+
+    @ConfField(masterOnly = true)
+    public static boolean enable_concurrent_update = false;
 }
