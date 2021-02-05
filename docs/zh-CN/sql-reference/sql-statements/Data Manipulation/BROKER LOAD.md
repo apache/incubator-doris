@@ -29,13 +29,14 @@ under the License.
 
     Broker load 通过随 Doris 集群一同部署的 broker 进行，访问对应数据源的数据，进行数据导入。
     可以通过 show broker 命令查看已经部署的 broker。
-    目前支持以下4种数据源：
+    目前支持以下6种数据源：
 
     1. Baidu HDFS：百度内部的 hdfs，仅限于百度内部使用。
     2. Baidu AFS：百度内部的 afs，仅限于百度内部使用。
     3. Baidu Object Storage(BOS)：百度对象存储。仅限百度内部用户、公有云用户或其他可以访问 BOS 的用户使用。
     4. Apache HDFS：社区版本 hdfs。
     5. Amazon S3：Amazon对象存储。
+    6. Aliyun OSS：阿里云对象存储。
 
 语法：
 
@@ -176,6 +177,13 @@ under the License.
             fs.s3a.secret.key：AmazonS3的secret key
             fs.s3a.endpoint：AmazonS3的endpoint 
         
+        5. Aliyun OSS
+
+            需提供：
+            fs.oss.accessKeyId：Aliyun OSS的access key
+            fs.oss.accessKeySecret：Aliyun OSS的secret key
+            fs.oss.endpoint：Aliyun OSS的endpoint 
+
     4. opt_properties
 
         用于指定一些特殊参数。
@@ -478,6 +486,21 @@ under the License.
          ORDER BY source_sequence
         ) 
         with BROKER "hdfs" ("username"="user", "password"="pass");
+
+    15. 从 Aliyun OSS 导入csv格式的数据
+        LOAD LABEL example_db.label15
+        (
+        DATA INFILE("oss://my_bucket/input/file.csv")
+        INTO TABLE `my_table`
+        (k1, k2, k3)
+        )
+        WITH BROKER my_oss_broker
+        (
+        "fs.oss.accessKeyId" = "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "fs.oss.accessKeySecret" = "yyyyyyyyyyyyyyyyyyyy",
+        "fs.oss.endpoint" = "oss-cn-zhangjiakou-internal.aliyuncs.com"
+        )
+
          
 ## keyword
 

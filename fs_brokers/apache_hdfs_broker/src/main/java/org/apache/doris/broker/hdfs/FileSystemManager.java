@@ -65,6 +65,7 @@ public class FileSystemManager {
     // supported scheme
     private static final String HDFS_SCHEME = "hdfs";
     private static final String S3A_SCHEME = "s3a";
+    private static final String OSS_SCHEME = "oss";
 
     private static final String USER_NAME_KEY = "username";
     private static final String PASSWORD_KEY = "password";
@@ -94,6 +95,14 @@ public class FileSystemManager {
     private static final String FS_S3A_ENDPOINT = "fs.s3a.endpoint";
     // This property is used like 'fs.hdfs.impl.disable.cache'
     private static final String FS_S3A_IMPL_DISABLE_CACHE = "fs.s3a.impl.disable.cache";
+
+    //arguments for oss
+    private static final String FS_OSS_ACCESS_KEY = "fs.oss.accessKeyId";
+    private static final String FS_OSS_SECRET_KEY = "fs.oss.accessKeySecret";
+    private static final String FS_OSS_ENDPOINT = "fs.oss.endpoint";
+    // This property is used like 'fs.hdfs.impl.disable.cache'
+    private static final String FS_OSS_IMPL_DISABLE_CACHE = "fs.oss.impl.disable.cache";
+    private static final String FS_OSS_IMPL = "fs.oss.impl";
 
     private ScheduledExecutorService handleManagementPool = Executors.newScheduledThreadPool(2);
     
@@ -151,6 +160,8 @@ public class FileSystemManager {
             brokerFileSystem = getDistributedFileSystem(path, properties);
         } else if (scheme.equals(S3A_SCHEME)) {
             brokerFileSystem = getS3AFileSystem(path, properties);
+        } else if (scheme.equals(OSS_SCHEME)) {
+            brokerFileSystem = getOSSFileSystem(path, properties);
         } else {
             throw new BrokerException(TBrokerOperationStatusCode.INVALID_INPUT_FILE_PATH,
                 "invalid path. scheme is not supported");
@@ -410,6 +421,59 @@ public class FileSystemManager {
         }
     }
 
+    /**
+     * visible for test
+     *
+     * file system handle is cached, the identity is host + accessKey_secretKey
+     * @param path
+     * @param properties
+     * @return
+     * @throws URISyntaxException
+     * @throws Exception
+     */
+    public BrokerFileSystem getOSSFileSystem(String path, Map<String, String> properties) {
+        WildcardURI pathUri = new WildcardURI(path);
+        String accessKey = properties.getOrDefault(FS_OSS_ACCESS_KEY, "");
+        String secretKey = properties.getOrDefault(FS_OSS_SECRET_KEY, "");
+        String endpoint = properties.getOrDefault(FS_OSS_ENDPOINT, "");
+        String host = OSS_SCHEME + "://" + endpoint;
+        String ossUgi = accessKey + "," + secretKey;
+        FileSystemIdentity fileSystemIdentity = new FileSystemIdentity(host, ossUgi);
+        BrokerFileSystem fileSystem = null;
+        cachedFileSystem.putIfAbsent(fileSystemIdentity, new BrokerFileSystem(fileSystemIdentity));
+        fileSystem = cachedFileSystem.get(fileSystemIdentity);
+        if (fileSystem == null) {
+            // it means it is removed concurrently by checker thread
+            return null;
+        }
+        fileSystem.getLock().lock();
+        try {
+            if (!cachedFileSystem.containsKey(fileSystemIdentity)) {
+                // this means the file system is closed by file system checker thread
+                // it is a corner case
+                return null;
+            }
+            if (fileSystem.getDFSFileSystem() == null) {
+                logger.info("could not find file system for path " + path + " create a new one");
+                // create a new filesystem
+                Configuration conf = new Configuration();
+                conf.set(FS_OSS_ACCESS_KEY, accessKey);
+                conf.set(FS_OSS_SECRET_KEY, secretKey);
+                conf.set(FS_OSS_ENDPOINT, endpoint);
+                conf.set(FS_OSS_IMPL, "org.apache.hadoop.fs.aliyun.oss.AliyunOSSFileSystem");
+                conf.set(FS_OSS_IMPL_DISABLE_CACHE, "true");
+                FileSystem ossFileSystem = FileSystem.get(pathUri.getUri(), conf);
+                fileSystem.setFileSystem(ossFileSystem);
+            }
+            return fileSystem;
+        } catch (Exception e) {
+            logger.error("errors while connect to " + path, e);
+            throw new BrokerException(TBrokerOperationStatusCode.NOT_AUTHORIZED, e);
+        } finally {
+            fileSystem.getLock().unlock();
+        }
+    }
+
     public List<TBrokerFileStatus> listPath(String path, boolean fileNameOnly, Map<String, String> properties) {
         List<TBrokerFileStatus> resultFileStatus = null;
         WildcardURI pathUri = new WildcardURI(path);
@@ -550,22 +614,22 @@ public class FileSystemManager {
                             currentStreamOffset, offset);
                 }
             }
-            ByteBuffer buf;
+            byte[] buf;
             if (length > readBufferSize) {
-                buf = ByteBuffer.allocate(readBufferSize);
+                buf = new byte[readBufferSize];
             } else {
-                buf = ByteBuffer.allocate((int) length);
+                buf = new byte[(int)length];
             }
             try {
-                int readLength = readByteBufferFully(fsDataInputStream, buf);
+                int readLength = readByteArrayFully(fsDataInputStream, buf);
                 if (readLength < 0) {
                     throw new BrokerException(TBrokerOperationStatusCode.END_OF_FILE,
                             "end of file reached");
                 }
                 if (logger.isDebugEnabled()) {
-                    logger.debug("read buffer from input stream, buffer size:" + buf.capacity() + ", read length:" + readLength);
+                    logger.debug("read buffer from input stream, buffer size:" + buf.length + ", read length:" + readLength);
                 }
-                return buf;
+                return ByteBuffer.wrap(buf, 0, readLength);
             } catch (IOException e) {
                 logger.error("errors while read data from stream", e);
                 throw new BrokerException(TBrokerOperationStatusCode.TARGET_STORAGE_SERVICE_ERROR,
@@ -663,27 +727,16 @@ public class FileSystemManager {
         return new TBrokerFD(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
     }
 
-    private int readByteBuffer(FSDataInputStream is, ByteBuffer dest) throws IOException {
-        int pos = dest.position();
-        int result = is.read(dest);
-        if (result > 0) {
-            // Ensure this explicitly since versions before 2.7 read doesn't do it.
-            dest.position(pos + result);
-        }
-        return result;
-    }
-
-    private int readByteBufferFully(FSDataInputStream is, ByteBuffer dest) throws IOException {
-        int result = 0;
-        while (dest.remaining() > 0) {
-            int n = readByteBuffer(is, dest);
+    private int readByteArrayFully(FSDataInputStream is, byte[] dest) throws IOException {
+        int readLength = 0;
+        while (readLength < dest.length) {
+            int n = is.read(dest , readLength, dest.length - readLength);
             if (n <= 0) {
                 break;
             }
-            result += n;
+            readLength += n;
         }
-        dest.flip();
-        return result;
+        return readLength;
     }
     
     class FileSystemExpirationChecker implements Runnable {
