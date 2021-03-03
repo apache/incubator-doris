@@ -182,6 +182,12 @@ It should be less than 'max_running_txn_num_per_db'
 
 ### `bdbje_lock_timeout_second`
 
+### `broadcast_mem_limit`
+
+When executing `broadcast join` by default, switch to `shuffle join` if the amount of data exceeds this threshold, or exceeds `exec_mem_limit`.
+
+This variable is useless when the join hint is specified.
+
 ### `broker_load_default_timeout_second`
 
 ### `brpc_idle_wait_max_time`
