@@ -250,6 +250,10 @@ void EngineCloneTask::_set_tablet_info(AgentStatus status, bool is_new_tablet) {
                       << ", schema_hash:" << _clone_req.schema_hash << ", signature:" << _signature
                       << ", version:" << tablet_info.version;
             _tablet_infos->push_back(tablet_info);
+            TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(
+                    _clone_req.tablet_id, _clone_req.schema_hash);
+            tablet->update_cumulative_compaction_score();
+            tablet->update_base_compaction_score();
         }
     }
     *_res_status = status;

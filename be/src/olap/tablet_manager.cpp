@@ -74,7 +74,8 @@ TabletManager::TabletManager(int32_t tablet_map_lock_shard_size)
     : _mem_tracker(MemTracker::CreateTracker(-1, "TabletManager", nullptr, false)),
       _tablets_shards_size(tablet_map_lock_shard_size),
       _tablets_shards_mask(tablet_map_lock_shard_size - 1),
-      _last_update_stat_ms(0) {
+      _last_update_stat_ms(0),
+      _last_update_compaction_score_ms(0) {
     CHECK_GT(_tablets_shards_size, 0);
     CHECK_EQ(_tablets_shards_size & _tablets_shards_mask, 0);
     _tablets_shards.resize(_tablets_shards_size);
@@ -696,10 +697,27 @@ void TabletManager::get_tablet_stat(TTabletStatResult* result) {
     result->__set_tablets_stats(_tablet_stat_cache);
 }
 
+void TabletManager::update_all_tablets_compaction_score() {
+    LOG(INFO) << "update all tablets score.";
+    for (const auto& tablets_shard : _tablets_shards) {
+        ReadLock rlock(tablets_shard.lock.get());
+        for (const auto& tablet_map : tablets_shard.tablet_map) {
+            for (const TabletSharedPtr& tablet_ptr : tablet_map.second.table_arr) {
+                tablet_ptr->update_cumulative_compaction_score();
+                tablet_ptr->update_base_compaction_score();
+            }
+        }
+    }
+    _last_update_compaction_score_ms = UnixMillis();
+}
+
 TabletSharedPtr TabletManager::find_best_tablet_to_compaction(
         CompactionType compaction_type, DataDir* data_dir,
         const std::map<TTabletId, CompactionType>& tablet_submitted_compaction, uint32_t* score) {
     int64_t now_ms = UnixMillis();
+    if (now_ms - _last_update_compaction_score_ms > config::update_all_compaction_score_interval_sec * 1000) {
+        update_all_tablets_compaction_score();
+    }
     const string& compaction_type_str =
             compaction_type == CompactionType::BASE_COMPACTION ? "base" : "cumulative";
     double highest_score = 0.0;
@@ -764,7 +782,7 @@ TabletSharedPtr TabletManager::find_best_tablet_to_compaction(
                 }
 
                 uint32_t current_compaction_score =
-                        tablet_ptr->calc_compaction_score(compaction_type);
+                        tablet_ptr->get_compaction_score(compaction_type);
 
                 double scan_frequency = 0.0;
                 if (config::compaction_tablet_scan_frequency_factor != 0) {

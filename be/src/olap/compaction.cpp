@@ -132,6 +132,9 @@ OLAPStatus Compaction::do_compaction_impl(int64_t permits) {
         _tablet->set_last_base_compaction_success_time(now);
     }
 
+    _tablet->update_cumulative_compaction_score();
+    _tablet->update_base_compaction_score();
+
     LOG(INFO) << "succeed to do " << compaction_name() << ". tablet=" << _tablet->full_name()
               << ", output_version=" << _output_version.first << "-" << _output_version.second
               << ", current_max_version=" << _tablet->rowset_with_max_version()->end_version()

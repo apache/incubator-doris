@@ -731,6 +731,23 @@ const uint32_t Tablet::calc_compaction_score(CompactionType compaction_type) con
     }
 }
 
+const uint32_t Tablet::get_compaction_score(CompactionType compaction_type) {
+    if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
+        return _cumulative_compaction_score.value();
+    } else {
+        DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
+        return _base_compaction_score.value();
+    }
+}
+
+void Tablet::update_base_compaction_score() {
+    _base_compaction_score.set_value(calc_compaction_score(CompactionType::BASE_COMPACTION));
+}
+
+void Tablet::update_cumulative_compaction_score() {
+    _cumulative_compaction_score.set_value(calc_compaction_score(CompactionType::CUMULATIVE_COMPACTION));
+}
+
 const uint32_t Tablet::_calc_cumulative_compaction_score() const {
     uint32_t score = 0;
     _cumulative_compaction_policy->calc_cumulative_compaction_score(

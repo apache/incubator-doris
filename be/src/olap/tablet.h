@@ -163,6 +163,9 @@ public:
     // operation for compaction
     bool can_do_compaction();
     const uint32_t calc_compaction_score(CompactionType compaction_type) const;
+    const uint32_t get_compaction_score(CompactionType compaction_type);
+    void update_base_compaction_score();
+    void update_cumulative_compaction_score();
     static void compute_version_hash_from_rowsets(const std::vector<RowsetSharedPtr>& rowsets,
                                                   VersionHash* version_hash);
 
@@ -317,6 +320,9 @@ private:
     int64_t _last_record_scan_count;
     // the timestamp of the last record.
     time_t _last_record_scan_count_timestamp;
+
+    UIntGauge _base_compaction_score;
+    UIntGauge _cumulative_compaction_score;
 
     std::shared_ptr<CumulativeCompaction> _cumulative_compaction;
     std::shared_ptr<BaseCompaction> _base_compaction;

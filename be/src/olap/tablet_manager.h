@@ -69,6 +69,8 @@ public:
 
     OLAPStatus drop_tablets_on_error_root_path(const std::vector<TabletInfo>& tablet_info_vec);
 
+    void update_all_tablets_compaction_score();
+
     TabletSharedPtr find_best_tablet_to_compaction(CompactionType compaction_type,
                                                    DataDir* data_dir,
                                                    const std::map<TTabletId, CompactionType>& tablet_submitted_compaction,
@@ -233,6 +235,9 @@ private:
     std::map<int64_t, TTabletStat> _tablet_stat_cache;
     // last update time of tablet stat cache
     int64_t _last_update_stat_ms;
+
+    // timestamp of last update all tablets' compaction score
+    int64_t _last_update_compaction_score_ms;
 
     tablet_map_t& _get_tablet_map(TTabletId tablet_id);
 
