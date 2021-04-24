@@ -318,8 +318,9 @@ CONF_mInt32(agent_task_trace_threshold_sec, "2");
 // time interval to record tablet scan count in second for the purpose of calculating tablet scan frequency
 CONF_mInt64(tablet_scan_frequency_time_node_interval_second, "300");
 // coefficient for tablet scan frequency and compaction score when finding a tablet for compaction
-CONF_mInt32(compaction_tablet_scan_frequency_factor, "0");
-CONF_mInt32(compaction_tablet_compaction_score_factor, "1");
+CONF_mDouble(compaction_tablet_scan_frequency_factor, "0.0");
+CONF_mDouble(compaction_tablet_compaction_score_factor, "1.0");
+CONF_mDouble(compaction_tablet_del_rows_factor, "0.0");
 
 // This config can be set to limit thread number in tablet migration thread pool.
 CONF_Int32(min_tablet_migration_threads, "1");

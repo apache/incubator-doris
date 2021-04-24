@@ -393,7 +393,18 @@ void StorageEngine::_compaction_tasks_producer_callback() {
                         _permit_limiter.release(permits);
                         _pop_tablet_from_submitted_compaction(tablet);
                         // reset compaction
-                        tablet->reset_compaction(compaction_type); 
+                        tablet->reset_compaction(compaction_type);
+                        std::unique_lock<std::mutex> lock(_tablet_submitted_compaction_mutex);
+                        std::vector<TTabletId>::iterator it_tablet =
+                                find(_tablet_submitted_compaction[tablet->data_dir()].begin(),
+                                     _tablet_submitted_compaction[tablet->data_dir()].end(),
+                                     tablet->tablet_id());
+                        if (it_tablet !=
+                            _tablet_submitted_compaction[tablet->data_dir()].end()) {
+                            _tablet_submitted_compaction[tablet->data_dir()].erase(it_tablet);
+                            _wakeup_producer_flag = 1;
+                            _compaction_producer_sleep_cv.notify_one();
+                        }
                     }
                 } else {
                     // reset compaction
