@@ -52,6 +52,7 @@ add_library(Exprs
   math_functions.cpp
   null_literal.cpp  
   scalar_fn_call.cpp
+  lua_fn_call.cpp
   slot_ref.cpp
   string_functions.cpp
   timestamp_functions.cpp
