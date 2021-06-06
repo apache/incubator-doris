@@ -376,6 +376,12 @@ HDFS3_NAME="libhdfs3-master.zip"
 HDFS3_SOURCE="libhdfs3-master"
 HDFS3_MD5SUM="9e46a16009cf86b5e187d302b3582628"
 
+# lua
+LUA_DOWNLOAD="http://www.lua.org/ftp/lua-5.4.3.tar.gz"
+LUA_NAME="lua-5.4.3.tar.gz"
+LUA_SOURCE="lua-5.4.3"
+LUA_MD5SM="ef63ed2ecfb713646a7fcc583cf5f352"
+
 # all thirdparties which need to be downloaded is set in array TP_ARCHIVES
 export TP_ARCHIVES="LIBEVENT
 OPENSSL
@@ -431,4 +437,5 @@ AWS_SDK
 LZMA
 XML2
 GSASL
-HDFS3"
+HDFS3
+LUA"
