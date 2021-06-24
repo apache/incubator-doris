@@ -22,6 +22,7 @@
 
 #include "gen_cpp/PaloInternalService_types.h"
 #include "olap/field.h"
+#include "olap/scan_range.h"
 #include "olap_scan_node.h"
 #include "olap_utils.h"
 #include "runtime/descriptors.h"
@@ -36,8 +37,7 @@
 namespace doris {
 
 OlapScanner::OlapScanner(RuntimeState* runtime_state, OlapScanNode* parent, bool aggregation,
-                         bool need_agg_finalize, const TPaloScanRange& scan_range,
-                         const std::vector<OlapScanRange*>& key_ranges)
+                         bool need_agg_finalize)
         : _runtime_state(runtime_state),
           _parent(parent),
           _tuple_desc(parent->_tuple_desc),
@@ -94,8 +94,8 @@ Status OlapScanner::prepare(
             // to prevent this case: when there are lots of olap scanners to run for example 10000
             // the rowsets maybe compacted when the last olap scanner starts
             Version rd_version(0, _version);
-            OLAPStatus acquire_reader_st =
-                    _tablet->capture_rs_readers(rd_version, &_params.rs_readers, _mem_tracker);
+            OLAPStatus acquire_reader_st = _tablet->capture_rs_readers_by_range(
+                    rd_version, &_params.rs_readers, key_ranges, _mem_tracker);
             if (acquire_reader_st != OLAP_SUCCESS) {
                 LOG(WARNING) << "fail to init reader.res=" << acquire_reader_st;
                 std::stringstream ss;
@@ -106,11 +106,8 @@ Status OlapScanner::prepare(
             }
         }
     }
-
-    {
-        // Initialize _params
-        RETURN_IF_ERROR(_init_params(key_ranges, filters, bloom_filters));
-    }
+    // Initialize _params
+    RETURN_IF_ERROR(_init_params(key_ranges, filters, bloom_filters));
 
     return Status::OK();
 }
@@ -156,6 +153,11 @@ Status OlapScanner::_init_params(
 
     // Range
     for (auto key_range : key_ranges) {
+        if (key_range->range_type == ScanRangeType::SEGMENT) {
+            for (const auto& s : key_range->segments) {
+                _params.segments[s.first].emplace(s.second);
+            }
+        }
         if (key_range->begin_scan_range.size() == 1 &&
             key_range->begin_scan_range.get_value(0) == NEGATIVE_INFINITY) {
             continue;
