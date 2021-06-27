@@ -39,15 +39,18 @@ import org.apache.doris.analysis.AlterDatabaseRename;
 import org.apache.doris.analysis.AlterSystemStmt;
 import org.apache.doris.analysis.AlterTableStmt;
 import org.apache.doris.analysis.AlterViewStmt;
+import org.apache.doris.analysis.Analyzer;
 import org.apache.doris.analysis.BackupStmt;
 import org.apache.doris.analysis.CancelAlterSystemStmt;
 import org.apache.doris.analysis.CancelAlterTableStmt;
 import org.apache.doris.analysis.CancelBackupStmt;
+import org.apache.doris.analysis.ColumnDef;
 import org.apache.doris.analysis.ColumnRenameClause;
 import org.apache.doris.analysis.CreateClusterStmt;
 import org.apache.doris.analysis.CreateDbStmt;
 import org.apache.doris.analysis.CreateFunctionStmt;
 import org.apache.doris.analysis.CreateMaterializedViewStmt;
+import org.apache.doris.analysis.CreateTableAsSelectStmt;
 import org.apache.doris.analysis.CreateTableLikeStmt;
 import org.apache.doris.analysis.CreateTableStmt;
 import org.apache.doris.analysis.CreateUserStmt;
@@ -61,12 +64,14 @@ import org.apache.doris.analysis.DropMaterializedViewStmt;
 import org.apache.doris.analysis.DropPartitionClause;
 import org.apache.doris.analysis.DropTableStmt;
 import org.apache.doris.analysis.FunctionName;
+import org.apache.doris.analysis.HashDistributionDesc;
 import org.apache.doris.analysis.InstallPluginStmt;
 import org.apache.doris.analysis.KeysDesc;
 import org.apache.doris.analysis.LinkDbStmt;
 import org.apache.doris.analysis.MigrateDbStmt;
 import org.apache.doris.analysis.PartitionDesc;
 import org.apache.doris.analysis.PartitionRenameClause;
+import org.apache.doris.analysis.QueryStmt;
 import org.apache.doris.analysis.RecoverDbStmt;
 import org.apache.doris.analysis.RecoverPartitionStmt;
 import org.apache.doris.analysis.RecoverTableStmt;
@@ -79,6 +84,7 @@ import org.apache.doris.analysis.TableName;
 import org.apache.doris.analysis.TableRef;
 import org.apache.doris.analysis.TableRenameClause;
 import org.apache.doris.analysis.TruncateTableStmt;
+import org.apache.doris.analysis.TypeDef;
 import org.apache.doris.analysis.UninstallPluginStmt;
 import org.apache.doris.analysis.UserDesc;
 import org.apache.doris.analysis.UserIdentity;
@@ -3057,6 +3063,41 @@ public class Catalog {
             createTable(parsedCreateTableStmt);
         } catch (UserException e) {
             throw new DdlException("Failed to execute CREATE TABLE LIKE " + stmt.getExistedTableName() + ". Reason: " + e.getMessage());
+        }
+    }
+
+    public void createTableAsSelect(CreateTableAsSelectStmt stmt) throws DdlException {
+        try {
+            QueryStmt tmpStmt = stmt.getQueryStmt().clone();
+            List<String> columnNames = stmt.getColumnNames();
+            CreateTableStmt createTableStmt = stmt.getCreateTableStmt();
+            Analyzer dummyRootAnalyzer = new Analyzer(this, ConnectContext.get());
+            tmpStmt.analyze(dummyRootAnalyzer);
+
+            // Check columnNames
+            if (columnNames != null) {
+                if (columnNames.size() != tmpStmt.getColLabels().size()) {
+                    ErrorReport.report(ErrorCode.ERR_COL_NUMBER_NOT_MATCH);
+                }
+                for (int i = 0; i < columnNames.size(); ++i) {
+                    createTableStmt.addColumnDef(new ColumnDef(
+                            columnNames.get(i), new TypeDef(tmpStmt.getResultExprs().get(i).getType())));
+                }
+            } else {
+                for (int i = 0; i < tmpStmt.getColLabels().size(); ++i) {
+                    createTableStmt.addColumnDef(new ColumnDef(
+                            tmpStmt.getColLabels().get(i), new TypeDef(tmpStmt.getResultExprs().get(i).getType())));
+                }
+            }
+
+            // set first column as default distribution
+            if (createTableStmt.getDistributionDesc() == null) {
+                createTableStmt.setDistributionDesc(new HashDistributionDesc(10, Lists.newArrayList(tmpStmt.getColLabels().get(0))));
+            }
+            createTableStmt.analyze(dummyRootAnalyzer);
+            createTable(createTableStmt);
+        } catch (UserException e) {
+            throw new DdlException("Failed to execute CREATE TABLE AS SELECT Reason: " + e.getMessage());
         }
     }
 
