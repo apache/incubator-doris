@@ -45,6 +45,7 @@ import org.apache.doris.analysis.CancelAlterSystemStmt;
 import org.apache.doris.analysis.CancelAlterTableStmt;
 import org.apache.doris.analysis.CancelBackupStmt;
 import org.apache.doris.analysis.ColumnDef;
+import org.apache.doris.analysis.ColumnDef.DefaultValue;
 import org.apache.doris.analysis.ColumnRenameClause;
 import org.apache.doris.analysis.CreateClusterStmt;
 import org.apache.doris.analysis.CreateDbStmt;
@@ -63,6 +64,7 @@ import org.apache.doris.analysis.DropFunctionStmt;
 import org.apache.doris.analysis.DropMaterializedViewStmt;
 import org.apache.doris.analysis.DropPartitionClause;
 import org.apache.doris.analysis.DropTableStmt;
+import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.FunctionName;
 import org.apache.doris.analysis.HashDistributionDesc;
 import org.apache.doris.analysis.InstallPluginStmt;
@@ -3073,26 +3075,30 @@ public class Catalog {
             CreateTableStmt createTableStmt = stmt.getCreateTableStmt();
             Analyzer dummyRootAnalyzer = new Analyzer(this, ConnectContext.get());
             tmpStmt.analyze(dummyRootAnalyzer);
-
+            List<Expr> resultExprs = tmpStmt.getResultExprs();
             // Check columnNames
-            if (columnNames != null) {
-                if (columnNames.size() != tmpStmt.getColLabels().size()) {
-                    ErrorReport.report(ErrorCode.ERR_COL_NUMBER_NOT_MATCH);
-                }
-                for (int i = 0; i < columnNames.size(); ++i) {
-                    createTableStmt.addColumnDef(new ColumnDef(
-                            columnNames.get(i), new TypeDef(tmpStmt.getResultExprs().get(i).getType())));
-                }
+            if (columnNames != null && columnNames.size() != tmpStmt.getColLabels().size()) {
+                ErrorReport.report(ErrorCode.ERR_COL_NUMBER_NOT_MATCH);
             } else {
                 for (int i = 0; i < tmpStmt.getColLabels().size(); ++i) {
-                    createTableStmt.addColumnDef(new ColumnDef(
-                            tmpStmt.getColLabels().get(i), new TypeDef(tmpStmt.getResultExprs().get(i).getType())));
+                    String name;
+                    Expr expr = tmpStmt.getResultExprs().get(i);
+                    if (columnNames != null) {
+                        name = columnNames.get(i);
+                    } else {
+                        name = expr.toColumnLabel().replaceAll("'", "");
+                    }
+                    TypeDef typeDef = new TypeDef(expr.getType());
+                    // todo: varchar
+                    createTableStmt.addColumnDef(new ColumnDef(name, typeDef, false,
+                            null, true,
+                            new DefaultValue(false, null),
+                            ""));
+                    // set first column as default distribution
+                    if (createTableStmt.getDistributionDesc() == null && i == 0) {
+                        createTableStmt.setDistributionDesc(new HashDistributionDesc(10, Lists.newArrayList(name)));
+                    }
                 }
-            }
-
-            // set first column as default distribution
-            if (createTableStmt.getDistributionDesc() == null) {
-                createTableStmt.setDistributionDesc(new HashDistributionDesc(10, Lists.newArrayList(tmpStmt.getColLabels().get(0))));
             }
             createTableStmt.analyze(dummyRootAnalyzer);
             createTable(createTableStmt);

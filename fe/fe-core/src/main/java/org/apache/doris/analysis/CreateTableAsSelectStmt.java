@@ -18,8 +18,6 @@
 package org.apache.doris.analysis;
 
 import java.util.List;
-import org.apache.doris.common.AnalysisException;
-import org.apache.doris.common.DdlException;
 import org.apache.doris.common.UserException;
 
 /**
@@ -43,7 +41,7 @@ public class CreateTableAsSelectStmt extends DdlStmt {
 
     @Override
     public void analyze(Analyzer analyzer) throws UserException {
-
+        super.analyze(analyzer);
     }
 
     public CreateTableStmt getCreateTableStmt() {
@@ -56,15 +54,6 @@ public class CreateTableAsSelectStmt extends DdlStmt {
 
     public QueryStmt getQueryStmt() {
         return queryStmt;
-    }
-
-    public void createTable(Analyzer analyzer) throws AnalysisException {
-        // Create table
-        try {
-            analyzer.getCatalog().createTable(createTableStmt);
-        } catch (DdlException e) {
-            throw new AnalysisException(e.getMessage());
-        }
     }
 
     @Override
