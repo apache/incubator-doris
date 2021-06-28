@@ -23,7 +23,6 @@
 #include <thrift/processor/TMultiplexedProcessor.h>
 #include <thrift/protocol/TDebugProtocol.h>
 
-#include <boost/shared_ptr.hpp>
 #include <map>
 #include <memory>
 
@@ -75,13 +74,13 @@ BackendService::BackendService(ExecEnv* exec_env)
 }
 
 Status BackendService::create_service(ExecEnv* exec_env, int port, ThriftServer** server) {
-    boost::shared_ptr<BackendService> handler(new BackendService(exec_env));
+    std::shared_ptr<BackendService> handler(new BackendService(exec_env));
     // TODO: do we want a BoostThreadFactory?
     // TODO: we want separate thread factories here, so that fe requests can't starve
     // be requests
-    boost::shared_ptr<ThreadFactory> thread_factory(new PosixThreadFactory());
+    std::shared_ptr<ThreadFactory> thread_factory(new PosixThreadFactory());
 
-    boost::shared_ptr<TProcessor> be_processor(new BackendServiceProcessor(handler));
+    std::shared_ptr<TProcessor> be_processor(new BackendServiceProcessor(handler));
 
     *server = new ThriftServer("backend", be_processor, port, config::be_service_threads);
 

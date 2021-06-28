@@ -21,7 +21,6 @@
 #include <thrift/protocol/TDebugProtocol.h>
 
 #include <algorithm>
-#include <boost/shared_ptr.hpp>
 #include <boost/thread/thread.hpp>
 #include <iostream>
 
@@ -177,7 +176,7 @@ private:
     int64_t _packet_seq;
 
     // we're accumulating rows into this batch
-    boost::scoped_ptr<RowBatch> _batch;
+    std::unique_ptr<RowBatch> _batch;
 
     bool _need_close;
     int _be_number;
@@ -309,7 +308,7 @@ Status DataStreamSender::Channel::send_current_batch(bool eos) {
 }
 
 Status DataStreamSender::Channel::send_local_batch(bool eos) {
-    boost::shared_ptr<DataStreamRecvr> recvr =
+    std::shared_ptr<DataStreamRecvr> recvr =
             _parent->state()->exec_env()->stream_mgr()->find_recvr(_fragment_instance_id,
                                                                    _dest_node_id);
     if (recvr != nullptr) {
@@ -323,7 +322,7 @@ Status DataStreamSender::Channel::send_local_batch(bool eos) {
 }
 
 Status DataStreamSender::Channel::send_local_batch(RowBatch* batch, bool use_move) {
-    boost::shared_ptr<DataStreamRecvr> recvr =
+    std::shared_ptr<DataStreamRecvr> recvr =
             _parent->state()->exec_env()->stream_mgr()->find_recvr(_fragment_instance_id,
                                                                    _dest_node_id);
     if (recvr != nullptr) {
