@@ -17,6 +17,7 @@
 
 package org.apache.doris.http.action;
 
+import org.apache.doris.common.Config;
 import org.apache.doris.common.util.ProfileManager;
 import org.apache.doris.http.ActionController;
 import org.apache.doris.http.BaseRequest;
@@ -25,12 +26,12 @@ import org.apache.doris.http.IllegalArgException;
 
 import com.google.common.base.Strings;
 
-import io.netty.handler.codec.http.HttpMethod;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.List;
+
+import io.netty.handler.codec.http.HttpMethod;
 
 public class QueryAction extends WebBaseAction {
     private static final Logger LOG = LogManager.getLogger(QueryAction.class);
@@ -57,7 +58,7 @@ public class QueryAction extends WebBaseAction {
     // Note: we do not show 'Query ID' column in web page
     private void addFinishedQueryInfo(StringBuilder buffer) {
         buffer.append("<h2>Finished Queries</h2>");
-        buffer.append("<p>This table lists the latest 100 queries</p>");
+        buffer.append("<p>This table lists the latest " + Config.report_query_array_size + " queries</p>");
         
         List<List<String>> finishedQueries = ProfileManager.getInstance().getAllQueries();
         List<String> columnHeaders = ProfileManager.PROFILE_HEADERS;
