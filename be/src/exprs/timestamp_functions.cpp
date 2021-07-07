@@ -574,6 +574,7 @@ DateTimeVal from_olap_datetime(uint64_t datetime) {
 
 static const DateTimeVal FIRST_DAY = from_olap_datetime(19700101000000);
 static const DateTimeVal FIRST_SUNDAY = from_olap_datetime(19700104000000);
+static const int last_days[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
 
 #define TIME_ROUND(UNIT, unit, ORIGIN)                                    \
     _TR_4(FLOOR, floor, UNIT, unit)                                       \
@@ -648,6 +649,27 @@ DateTimeVal TimestampFunctions::time_round(FunctionContext* ctx, const DateTimeV
     DateTimeVal new_ts_val;
     ts1.to_datetime_val(&new_ts_val);
     return new_ts_val;
+}
+
+DateTimeVal TimestampFunctions::last_day(FunctionContext* ctx, const DateTimeVal& ts_val) {
+    if (ts_val.is_null) {
+        return DateTimeVal::null();
+    }
+    const DateTimeValue& ts_value = DateTimeValue::from_datetime_val(ts_val);
+    int day ;
+    int year = ts_value.year();
+    int month = ts_value.month();
+    if((year % 4 == 0 && year % 100 !=0)||(year % 400 ==0 )) {
+        day = 29 ;
+    } else {
+        day = last_days[month - 1]; 
+    }
+    DateTimeVal ts_val_last_day;
+    uint64_t dst_value = DateTimeValue::calc_daynr(year,month,day);
+    DateTimeValue dst_tv ;
+    dst_tv.from_date_daynr(dst_value);
+    dst_tv.to_datetime_val(&ts_val_last_day);  
+    return ts_val_last_day;
 }
 
 StringVal TimestampFunctions::date_format(FunctionContext* ctx, const DateTimeVal& ts_val,

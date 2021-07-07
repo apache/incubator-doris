@@ -94,7 +94,16 @@ public class FEFunctionsTest {
         expectedResult = new IntLiteral(-30);
         Assert.assertEquals(expectedResult, actualResult);
     }
-    
+
+    @Test
+    public void LastDayTest() throws AnalysisException {
+        DateLiteral actualResult = FEFunctions.lastDay(new DateLiteral("2010-11-02 23:59:59", Type.DATETIME));
+        Assert.assertEquals("2010-11-30", actualResult.dateFormat("yyyy-MM-dd"));
+
+        actualResult = FEFunctions.lastDay(new DateLiteral("2004-02-21 23:59:50", Type.DATETIME));
+        Assert.assertEquals("20004-02-29", actualResult.dateFormat("yyyy-MM-dd"));
+    }
+
     @Test
     public void dateAddTest() throws AnalysisException {
         DateLiteral actualResult = FEFunctions.dateAdd(new DateLiteral("2018-08-08", Type.DATE), new IntLiteral(1));
@@ -105,7 +114,7 @@ public class FEFunctionsTest {
         expectedResult = new DateLiteral("2018-08-07 00:00:00", Type.DATETIME);
         Assert.assertEquals(expectedResult, actualResult);
     }
-    
+
     @Test
     public void addDateTest() throws AnalysisException {
         DateLiteral actualResult = FEFunctions.addDate(new DateLiteral("2018-08-08", Type.DATE), new IntLiteral(1));
@@ -117,7 +126,7 @@ public class FEFunctionsTest {
         Assert.assertEquals(expectedResult, actualResult);
 
     }
-    
+
     @Test
     public void daysAddTest() throws AnalysisException {
         DateLiteral actualResult = FEFunctions.daysAdd(new DateLiteral("2018-08-08", Type.DATE), new IntLiteral(1));
@@ -128,7 +137,7 @@ public class FEFunctionsTest {
         expectedResult = new DateLiteral("2018-08-07", Type.DATE);
         Assert.assertEquals(expectedResult, actualResult);
     }
-    
+
     @Test
     public void fromUnixTimeTest() throws AnalysisException {
         StringLiteral actualResult = FEFunctions.fromUnixTime(new IntLiteral(100000));

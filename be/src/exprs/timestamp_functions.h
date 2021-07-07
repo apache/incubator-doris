@@ -92,6 +92,8 @@ public:
                                            const doris_udf::IntVal& count);
     static doris_udf::DateTimeVal to_date(doris_udf::FunctionContext* ctx,
                                           const doris_udf::DateTimeVal& ts_val);
+    static doris_udf::DateTimeVal last_day(doris_udf::FunctionContext* ctx,
+                                          const doris_udf::DateTimeVal& ts_val);                                          
     static doris_udf::IntVal date_diff(doris_udf::FunctionContext* ctx,
                                        const doris_udf::DateTimeVal& ts_val1,
                                        const doris_udf::DateTimeVal& ts_val2);
