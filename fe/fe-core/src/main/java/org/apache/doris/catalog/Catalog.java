@@ -83,6 +83,7 @@ import org.apache.doris.analysis.UninstallPluginStmt;
 import org.apache.doris.analysis.UserDesc;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.backup.BackupHandler;
+import org.apache.doris.block.SqlBlockRuleMgr;
 import org.apache.doris.catalog.ColocateTableIndex.GroupId;
 import org.apache.doris.catalog.Database.DbState;
 import org.apache.doris.catalog.DistributionInfo.DistributionInfoType;
@@ -298,6 +299,7 @@ public class Catalog {
     private LoadManager loadManager;
     private StreamLoadRecordMgr streamLoadRecordMgr;
     private RoutineLoadManager routineLoadManager;
+    private SqlBlockRuleMgr sqlBlockRuleMgr;
     private ExportMgr exportMgr;
     private Alter alter;
     private ConsistencyChecker consistencyChecker;
@@ -482,6 +484,7 @@ public class Catalog {
         this.fullNameToDb = new ConcurrentHashMap<>();
         this.load = new Load();
         this.routineLoadManager = new RoutineLoadManager();
+        this.sqlBlockRuleMgr = new SqlBlockRuleMgr();
         this.exportMgr = new ExportMgr();
         this.alter = new Alter();
         this.consistencyChecker = new ConsistencyChecker();
@@ -1513,6 +1516,7 @@ public class Catalog {
             checksum = loadSmallFiles(dis, checksum);
             checksum = loadPlugins(dis, checksum);
             checksum = loadDeleteHandler(dis, checksum);
+            checksum = loadSqlBlockRule(dis, checksum);
 
             long remoteChecksum = dis.readLong();
             Preconditions.checkState(remoteChecksum == checksum, remoteChecksum + " vs. " + checksum);
@@ -1905,6 +1909,14 @@ public class Catalog {
         return checksum;
     }
 
+    public long loadSqlBlockRule(DataInputStream in, long checksum) throws IOException {
+        if (Catalog.getCurrentCatalogJournalVersion() >= FeMetaVersion.VERSION_100) {
+            sqlBlockRuleMgr.readFields(in);
+        }
+        LOG.info("finished replay sqlBlockRule from image");
+        return checksum;
+    }
+
     // Only called by checkpoint thread
     public void saveImage() throws IOException {
         // Write image.ckpt
@@ -1954,6 +1966,7 @@ public class Catalog {
             checksum = saveSmallFiles(dos, checksum);
             checksum = savePlugins(dos, checksum);
             checksum = saveDeleteHandler(dos, checksum);
+            checksum = saveSqlBlockRule(dos, checksum);
             dos.writeLong(checksum);
         }
 
@@ -2203,6 +2216,11 @@ public class Catalog {
 
     private long saveSmallFiles(DataOutputStream out, long checksum) throws IOException {
         smallFileMgr.write(out);
+        return checksum;
+    }
+
+    public long saveSqlBlockRule(DataOutputStream out, long checksum) throws IOException {
+        Catalog.getCurrentCatalog().getSqlBlocklistMgr().write(out);
         return checksum;
     }
 
@@ -4892,6 +4910,10 @@ public class Catalog {
 
     public RoutineLoadManager getRoutineLoadManager() {
         return routineLoadManager;
+    }
+
+    public SqlBlockRuleMgr getSqlBlocklistMgr() {
+        return sqlBlockRuleMgr;
     }
 
     public RoutineLoadTaskScheduler getRoutineLoadTaskScheduler(){
