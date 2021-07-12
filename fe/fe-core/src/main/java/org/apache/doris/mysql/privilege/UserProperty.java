@@ -23,13 +23,16 @@ import org.apache.doris.catalog.Catalog;
 import org.apache.doris.catalog.ResourceGroup;
 import org.apache.doris.catalog.ResourceType;
 import org.apache.doris.cluster.ClusterNamespace;
+import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeMetaVersion;
 import org.apache.doris.common.LoadException;
 import org.apache.doris.common.Pair;
+import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.load.DppConfig;
+import org.apache.doris.resource.Tag;
 import org.apache.doris.system.SystemInfoService;
 
 import com.google.common.base.Joiner;
@@ -56,10 +59,10 @@ import java.util.regex.Pattern;
  * This user is just qualified by cluster name, not host which it connected from.
  */
 public class UserProperty implements Writable {
-
     // common properties
     private static final String PROP_MAX_USER_CONNECTIONS = "max_user_connections";
     private static final String PROP_MAX_QUERY_INSTANCES = "max_query_instances";
+    private static final String PROP_RESOURCE_TAGS = "resource_tags";
     // common properties end
 
     private static final String PROP_RESOURCE = "resource";
@@ -89,12 +92,20 @@ public class UserProperty implements Writable {
      */
     private WhiteList whiteList = new WhiteList();
 
+    public static final Set<Tag> INVALID_RESOURCE_TAGS;
+
+    static {
+        INVALID_RESOURCE_TAGS = Sets.newHashSet();
+        INVALID_RESOURCE_TAGS.add(Tag.INVALID_TAG);
+    }
+
     static {
         ADVANCED_PROPERTIES.add(Pattern.compile("^" + PROP_MAX_USER_CONNECTIONS + "$", Pattern.CASE_INSENSITIVE));
         ADVANCED_PROPERTIES.add(Pattern.compile("^" + PROP_RESOURCE + ".", Pattern.CASE_INSENSITIVE));
         ADVANCED_PROPERTIES.add(Pattern.compile("^" + PROP_LOAD_CLUSTER + "." + DppConfig.CLUSTER_NAME_REGEX + "."
                 + DppConfig.PRIORITY + "$", Pattern.CASE_INSENSITIVE));
         ADVANCED_PROPERTIES.add(Pattern.compile("^" + PROP_MAX_QUERY_INSTANCES + "$", Pattern.CASE_INSENSITIVE));
+        ADVANCED_PROPERTIES.add(Pattern.compile("^" + PROP_RESOURCE_TAGS + "$", Pattern.CASE_INSENSITIVE));
 
         COMMON_PROPERTIES.add(Pattern.compile("^" + PROP_QUOTA + ".", Pattern.CASE_INSENSITIVE));
         COMMON_PROPERTIES.add(Pattern.compile("^" + PROP_DEFAULT_LOAD_CLUSTER + "$", Pattern.CASE_INSENSITIVE));
@@ -125,6 +136,10 @@ public class UserProperty implements Writable {
         return whiteList;
     }
 
+    public Set<Tag> getCopiedResourceTags() {
+        return Sets.newHashSet(this.commonProperties.getResourceTags());
+    }
+
     public void setPasswordForDomain(String domain, byte[] password, boolean errOnExist) throws DdlException {
         if (errOnExist && whiteList.containsDomain(domain)) {
             throw new DdlException("Domain " + domain + " of user " + qualifiedUser + " already exists");
@@ -139,10 +154,12 @@ public class UserProperty implements Writable {
         whiteList.removeDomain(domain);
     }
 
-    public void update(List<Pair<String, String>> properties) throws DdlException {
+    public void update(List<Pair<String, String>> properties) throws UserException {
         // copy
         long newMaxConn = this.commonProperties.getMaxConn();
         long newMaxQueryInstances = this.commonProperties.getMaxQueryInstances();
+        Set<Tag> resourceTags = this.commonProperties.getResourceTags();
+
         UserResource newResource = resource.getCopiedUserResource();
         String newDefaultLoadCluster = defaultLoadCluster;
         Map<String, DppConfig> newDppConfigs = Maps.newHashMap(clusterToDppConfig);
@@ -227,6 +244,18 @@ public class UserProperty implements Writable {
                 } catch (NumberFormatException e) {
                     throw new DdlException(PROP_MAX_QUERY_INSTANCES + " is not number");
                 }
+            } else if (keyArr[0].equalsIgnoreCase(PROP_RESOURCE_TAGS)) {
+                if (keyArr.length != 2) {
+                    throw new DdlException(PROP_RESOURCE_TAGS + " format error");
+                }
+                if (!keyArr[1].equals(Tag.TYPE_LOCATION)) {
+                    throw new DdlException("Only support location tag now");
+                }
+                try {
+                    resourceTags = parseLocationResoureTags(value);
+                } catch (NumberFormatException e) {
+                    throw new DdlException(PROP_RESOURCE_TAGS + " parse failed: " + e.getMessage());
+                }
             } else {
                 throw new DdlException("Unknown user property(" + key + ")");
             }
@@ -235,6 +264,7 @@ public class UserProperty implements Writable {
         // set
         this.commonProperties.setMaxConn(newMaxConn);
         this.commonProperties.setMaxQueryInstances(newMaxQueryInstances);
+        this.commonProperties.setResourceTags(resourceTags);
         resource = newResource;
         if (newDppConfigs.containsKey(newDefaultLoadCluster)) {
             defaultLoadCluster = newDefaultLoadCluster;
@@ -242,6 +272,16 @@ public class UserProperty implements Writable {
             defaultLoadCluster = null;
         }
         clusterToDppConfig = newDppConfigs;
+    }
+
+    private Set<Tag> parseLocationResoureTags(String value) throws AnalysisException {
+        Set<Tag> tags = Sets.newHashSet();
+        String[] parts = value.replaceAll(" ", "").split(",");
+        for (String part : parts) {
+            Tag tag = Tag.create(Tag.TYPE_LOCATION, part);
+            tags.add(tag);
+        }
+        return tags;
     }
 
     private void updateLoadCluster(String[] keyArr, String value, Map<String, DppConfig> newDppConfigs)
@@ -322,6 +362,9 @@ public class UserProperty implements Writable {
         // max query instance
         result.add(Lists.newArrayList(PROP_MAX_QUERY_INSTANCES, String.valueOf(commonProperties.getMaxQueryInstances())));
 
+        // resource tag
+        result.add(Lists.newArrayList(PROP_RESOURCE_TAGS, Joiner.on(", ").join(commonProperties.getResourceTags())));
+
         // resource
         ResourceGroup group = resource.getResource();
         for (Map.Entry<ResourceType, Integer> entry : group.getQuotaMap().entrySet()) {
@@ -397,8 +440,6 @@ public class UserProperty implements Writable {
         userProperty.readFields(in);
         return userProperty;
     }
-
-
 
     @Override
     public void write(DataOutput out) throws IOException {

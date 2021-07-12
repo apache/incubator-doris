@@ -38,20 +38,22 @@ import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.FeMetaVersion;
 import org.apache.doris.common.Pair;
+import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.load.DppConfig;
 import org.apache.doris.persist.PrivInfo;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.resource.Tag;
 import org.apache.doris.thrift.TFetchResourceResult;
 import org.apache.doris.thrift.TPrivilegeStatus;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -1015,17 +1017,17 @@ public class PaloAuth implements Writable {
     }
 
     // update user property
-    public void updateUserProperty(SetUserPropertyStmt stmt) throws DdlException {
+    public void updateUserProperty(SetUserPropertyStmt stmt) throws UserException {
         List<Pair<String, String>> properties = stmt.getPropertyPairList();
         updateUserPropertyInternal(stmt.getUser(), properties, false /* is replay */);
     }
 
-    public void replayUpdateUserProperty(UserPropertyInfo propInfo) throws DdlException {
+    public void replayUpdateUserProperty(UserPropertyInfo propInfo) throws UserException {
         updateUserPropertyInternal(propInfo.getUser(), propInfo.getProperties(), true /* is replay */);
     }
 
     public void updateUserPropertyInternal(String user, List<Pair<String, String>> properties, boolean isReplay)
-            throws DdlException {
+            throws UserException {
         writeLock();
         try {
             propertyMgr.updateUserProperty(user, properties);
@@ -1052,6 +1054,15 @@ public class PaloAuth implements Writable {
         readLock();
         try {
             return propertyMgr.getMaxQueryInstances(qualifiedUser);
+        } finally {
+            readUnlock();
+        }
+    }
+
+    public Set<Tag> getResourceTags(String qualifiedUser) {
+        readLock();
+        try {
+            return propertyMgr.getResourceTags(qualifiedUser);
         } finally {
             readUnlock();
         }

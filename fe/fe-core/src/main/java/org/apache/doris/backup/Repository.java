@@ -17,8 +17,6 @@
 
 package org.apache.doris.backup;
 
-import org.apache.commons.codec.digest.DigestUtils;
-
 import org.apache.doris.analysis.StorageBackend;
 import org.apache.doris.backup.Status.ErrCode;
 import org.apache.doris.catalog.Catalog;
@@ -30,6 +28,13 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.system.Backend;
+
+import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
+import com.google.common.collect.Lists;
+
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.JSONObject;
@@ -40,16 +45,13 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.List;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
-import com.google.common.collect.Lists;
 
 /*
  * Repository represents a remote storage for backup to or restore from
@@ -289,26 +291,39 @@ public class Repository implements Writable {
     }
 
     public String getRepoPath(String label, String childPath) {
-        return Joiner.on(PATH_DELIMITER).join(location, joinPrefix(PREFIX_REPO, name),
+        String path = Joiner.on(PATH_DELIMITER).join(location, joinPrefix(PREFIX_REPO, name),
                 joinPrefix(PREFIX_SNAPSHOT_DIR, label),
                 DIR_SNAPSHOT_CONTENT,
                 childPath);
+        try {
+            URI uri = new URI(path);
+            return uri.normalize().toString();
+        } catch (Exception e) {
+            LOG.warn("Invalid path: " + path, e);
+            return null;
+        }
     }
 
     // Check if this repo is available.
     // If failed to connect this repo, set errMsg and return false.
     public boolean ping() {
-        String checkPath = Paths.get(location, joinPrefix(PREFIX_REPO, name)).toString();
-        Status st = storage.checkPathExist(checkPath);
-        if (!st.ok()) {
-            errMsg = TimeUtils.longToTimeString(System.currentTimeMillis()) + ": " + st.getErrMsg();
+        String path = location + "/" + joinPrefix(PREFIX_REPO, name);
+        try {
+            URI checkUri = new URI(path);
+            Status st = storage.checkPathExist(checkUri.normalize().toString());
+            if (!st.ok()) {
+                errMsg = TimeUtils.longToTimeString(System.currentTimeMillis()) + ": " + st.getErrMsg();
+                return false;
+            }
+            // clear err msg
+            errMsg = null;
+
+            return true;
+        } catch (URISyntaxException e) {
+            errMsg = TimeUtils.longToTimeString(System.currentTimeMillis())
+                    + ": Invalid path. " + path + ", error: " + e.getMessage();
             return false;
         }
-
-        // clear err msg
-        errMsg = null;
-
-        return true;
     }
 
     // Visit the repository, and list all existing snapshot names

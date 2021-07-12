@@ -40,8 +40,8 @@ import org.apache.doris.rewrite.ExprRewriteRule;
 import org.apache.doris.rewrite.ExprRewriter;
 import org.apache.doris.rewrite.ExtractCommonFactorsRule;
 import org.apache.doris.rewrite.FoldConstantsRule;
-import org.apache.doris.rewrite.RewriteFromUnixTimeRule;
 import org.apache.doris.rewrite.NormalizeBinaryPredicatesRule;
+import org.apache.doris.rewrite.RewriteFromUnixTimeRule;
 import org.apache.doris.rewrite.SimplifyInvalidDateBinaryPredicatesDateRule;
 import org.apache.doris.rewrite.mvrewrite.CountDistinctToBitmap;
 import org.apache.doris.rewrite.mvrewrite.CountDistinctToBitmapOrHLLRule;
@@ -51,6 +51,9 @@ import org.apache.doris.rewrite.mvrewrite.NDVToHll;
 import org.apache.doris.rewrite.mvrewrite.ToBitmapToSlotRefRule;
 import org.apache.doris.thrift.TQueryGlobals;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
@@ -59,9 +62,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -448,10 +448,9 @@ public class Analyzer {
 
         // Register all legal aliases.
         for (String alias: aliases) {
-            // TODO(zc)
-            // aliasMap_.put(alias, result);
             tupleByAlias.put(alias, result);
         }
+
         tableRefMap_.put(result.getId(), ref);
 
         return result;

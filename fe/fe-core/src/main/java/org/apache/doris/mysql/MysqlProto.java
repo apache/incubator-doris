@@ -24,6 +24,7 @@ import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
+import org.apache.doris.mysql.privilege.PaloAuth;
 import org.apache.doris.mysql.privilege.UserResource;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.system.SystemInfoService;
@@ -90,18 +91,19 @@ public class MysqlProto {
                 context.getSessionVariable().setResourceGroup(strList[1]);
             }
         }
-        
+
         LOG.debug("parse cluster: {}", clusterName);
         String qualifiedUser = ClusterNamespace.getFullName(clusterName, tmpUser);
         String remoteIp = context.getMysqlChannel().getRemoteIp();
 
         List<UserIdentity> currentUserIdentity = Lists.newArrayList();
-        if (!Catalog.getCurrentCatalog().getAuth().checkPassword(qualifiedUser, remoteIp,
-                scramble, randomString, currentUserIdentity)) {
+        PaloAuth auth = Catalog.getCurrentCatalog().getAuth();
+        if (!auth.checkPassword(qualifiedUser, remoteIp, scramble, randomString, currentUserIdentity)) {
             ErrorReport.report(ErrorCode.ERR_ACCESS_DENIED_ERROR, qualifiedUser, usePasswd);
             return false;
         }
-       
+
+        context.setResourceTags(auth.getResourceTags(qualifiedUser));
         context.setCurrentUserIdentity(currentUserIdentity.get(0));
         context.setQualifiedUser(qualifiedUser);
         context.setRemoteIP(remoteIp);

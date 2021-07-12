@@ -89,14 +89,14 @@ import org.apache.doris.transaction.TabletCommitInfo;
 import org.apache.doris.transaction.TransactionCommitFailedException;
 import org.apache.doris.transaction.TransactionStatus;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.glassfish.jersey.internal.guava.Sets;
+
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.protobuf.ByteString;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.glassfish.jersey.internal.guava.Sets;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -361,7 +361,7 @@ public class StmtExecutor implements ProfileWriter {
             context.getState().setErrType(QueryState.ErrType.ANALYSIS_ERR);
         } catch (Exception e) {
             LOG.warn("execute Exception", e);
-            context.getState().setError(e.getMessage());
+            context.getState().setError(e.getClass().getSimpleName() + ", msg: " + e.getMessage());
             if (parsedStmt instanceof KillStmt) {
                 // ignore kill stmt execute err(not monitor it)
                 context.getState().setErrType(QueryState.ErrType.ANALYSIS_ERR);

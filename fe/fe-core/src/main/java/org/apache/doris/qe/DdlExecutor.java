@@ -23,6 +23,7 @@ import org.apache.doris.analysis.AdminRepairTableStmt;
 import org.apache.doris.analysis.AdminSetConfigStmt;
 import org.apache.doris.analysis.AdminSetReplicaStatusStmt;
 import org.apache.doris.analysis.AlterClusterStmt;
+import org.apache.doris.analysis.AlterDatabasePropertyStmt;
 import org.apache.doris.analysis.AlterDatabaseQuotaStmt;
 import org.apache.doris.analysis.AlterDatabaseRename;
 import org.apache.doris.analysis.AlterRoutineLoadStmt;
@@ -230,6 +231,8 @@ public class DdlExecutor {
             catalog.getResourceMgr().createResource((CreateResourceStmt) ddlStmt);
         } else if (ddlStmt instanceof DropResourceStmt) {
             catalog.getResourceMgr().dropResource((DropResourceStmt) ddlStmt);
+        } else if (ddlStmt instanceof AlterDatabasePropertyStmt) {
+            throw new DdlException("Not implemented yet");
         } else {
             throw new DdlException("Unknown statement.");
         }

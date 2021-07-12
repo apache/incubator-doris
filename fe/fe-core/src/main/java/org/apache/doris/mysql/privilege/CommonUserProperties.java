@@ -20,21 +20,30 @@ package org.apache.doris.mysql.privilege;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.resource.Tag;
 
 import com.google.gson.annotations.SerializedName;
+
+import org.glassfish.jersey.internal.guava.Sets;
 
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Set;
 
 /**
  * Used in
  */
 public class CommonUserProperties implements Writable {
+    // The max connections allowed for a user on one FE
     @SerializedName("maxConn")
     private long maxConn = 100;
+    // The maximum total number of query instances that the user is allowed to send from this FE
     @SerializedName("maxQueryInstances")
     private long maxQueryInstances = -1;
+    // The tag of the resource that the user is allowed to use
+    @SerializedName("resourceTags")
+    private Set<Tag> resourceTags = Sets.newHashSet();
 
     long getMaxConn() {
         return maxConn;
@@ -50,6 +59,14 @@ public class CommonUserProperties implements Writable {
 
     void setMaxQueryInstances(long maxQueryInstances) {
         this.maxQueryInstances = maxQueryInstances;
+    }
+
+    public void setResourceTags(Set<Tag> resourceTags) {
+        this.resourceTags = resourceTags;
+    }
+
+    public Set<Tag> getResourceTags() {
+        return resourceTags;
     }
 
     public static CommonUserProperties read(DataInput in) throws IOException {

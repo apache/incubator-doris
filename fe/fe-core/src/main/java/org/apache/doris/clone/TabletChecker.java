@@ -33,6 +33,7 @@ import org.apache.doris.catalog.Tablet.TabletStatus;
 import org.apache.doris.clone.TabletScheduler.AddResult;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
+import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.metric.GaugeMetric;
@@ -64,8 +65,6 @@ import java.util.stream.Collectors;
  */
 public class TabletChecker extends MasterDaemon {
     private static final Logger LOG = LogManager.getLogger(TabletChecker.class);
-
-    private static final long CHECK_INTERVAL_MS = 20 * 1000L; // 20 second
 
     private Catalog catalog;
     private SystemInfoService infoService;
@@ -128,7 +127,7 @@ public class TabletChecker extends MasterDaemon {
 
     public TabletChecker(Catalog catalog, SystemInfoService infoService, TabletScheduler tabletScheduler,
             TabletSchedulerStat stat) {
-        super("tablet checker", CHECK_INTERVAL_MS);
+        super("tablet checker", FeConstants.tablet_checker_interval_ms);
         this.catalog = catalog;
         this.infoService = infoService;
         this.tabletScheduler = tabletScheduler;
@@ -359,7 +358,7 @@ public class TabletChecker extends MasterDaemon {
                         db.getClusterName(),
                         partition.getVisibleVersion(),
                         partition.getVisibleVersionHash(),
-                        tbl.getPartitionInfo().getReplicationNum(partition.getId()),
+                        tbl.getPartitionInfo().getReplicaAllocation(partition.getId()),
                         aliveBeIdsInCluster);
 
                 if (statusWithPrio.first == TabletStatus.HEALTHY) {
@@ -388,6 +387,7 @@ public class TabletChecker extends MasterDaemon {
                         db.getClusterName(),
                         db.getId(), tbl.getId(),
                         partition.getId(), idx.getId(), tablet.getId(),
+                        tbl.getPartitionInfo().getReplicaAllocation(partition.getId()),
                         System.currentTimeMillis());
                 // the tablet status will be set again when being scheduled
                 tabletCtx.setTabletStatus(statusWithPrio.first);

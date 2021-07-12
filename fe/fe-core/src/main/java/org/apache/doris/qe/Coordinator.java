@@ -79,6 +79,11 @@ import org.apache.doris.thrift.TStatusCode;
 import org.apache.doris.thrift.TTabletCommitInfo;
 import org.apache.doris.thrift.TUniqueId;
 
+import org.apache.commons.collections.map.HashedMap;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.thrift.TException;
+
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.HashMultiset;
@@ -87,11 +92,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.Sets;
-
-import org.apache.commons.collections.map.HashedMap;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.apache.thrift.TException;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -988,12 +988,25 @@ public class Coordinator {
 
             if (fragment.getDataPartition() == DataPartition.UNPARTITIONED) {
                 Reference<Long> backendIdRef = new Reference<Long>();
-                TNetworkAddress execHostport = SimpleScheduler.getHost(this.idToBackend, backendIdRef);
+                TNetworkAddress execHostport;
+                if (ConnectContext.get() != null && ConnectContext.get().isResourceTagsSet()
+                        && !addressToBackendID.isEmpty()) {
+                    // In this case, we only use the BE where the replica selected by the tag is located to execute this query.
+                    // Otherwise, except for the scan node, the rest of the execution nodes of the query can be executed on any BE.
+                    // addressToBackendID can be empty when this is a constant select stmt like:
+                    //      SELECT  @@session.auto_increment_increment AS auto_increment_increment;
+                    execHostport = SimpleScheduler.getHostByCurrentBackend(addressToBackendID);
+                } else {
+                    execHostport = SimpleScheduler.getHost(this.idToBackend, backendIdRef);
+                }
                 if (execHostport == null) {
                     LOG.warn("DataPartition UNPARTITIONED, no scanNode Backend");
                     throw new UserException("there is no scanNode Backend");
                 }
-                this.addressToBackendID.put(execHostport, backendIdRef.getRef());
+                if (backendIdRef.getRef() != null) {
+                    // backendIdRef can be null is we call getHostByCurrentBackend() before
+                    this.addressToBackendID.put(execHostport, backendIdRef.getRef());
+                }
                 FInstanceExecParam instanceParam = new FInstanceExecParam(null, execHostport,
                         0, params);
                 params.instanceExecParams.add(instanceParam);
@@ -1105,11 +1118,23 @@ public class Coordinator {
 
             if (params.instanceExecParams.isEmpty()) {
                 Reference<Long> backendIdRef = new Reference<Long>();
-                TNetworkAddress execHostport = SimpleScheduler.getHost(this.idToBackend, backendIdRef);
+                TNetworkAddress execHostport;
+                if (ConnectContext.get() != null && !ConnectContext.get().isResourceTagsSet() && !addressToBackendID.isEmpty()) {
+                    // In this case, we only use the BE where the replica selected by the tag is located to execute this query.
+                    // Otherwise, except for the scan node, the rest of the execution nodes of the query can be executed on any BE.
+                    // addressToBackendID can be empty when this is a constant select stmt like:
+                    //      SELECT  @@session.auto_increment_increment AS auto_increment_increment;
+                    execHostport = SimpleScheduler.getHostByCurrentBackend(addressToBackendID);
+                } else {
+                    execHostport = SimpleScheduler.getHost(this.idToBackend, backendIdRef);
+                }
                 if (execHostport == null) {
                     throw new UserException("there is no scanNode Backend");
                 }
-                this.addressToBackendID.put(execHostport, backendIdRef.getRef());
+                if (backendIdRef.getRef() != null) {
+                    // backendIdRef can be null is we call getHostByCurrentBackend() before
+                    this.addressToBackendID.put(execHostport, backendIdRef.getRef());
+                }
                 FInstanceExecParam instanceParam = new FInstanceExecParam(null, execHostport,
                         0, params);
                 params.instanceExecParams.add(instanceParam);
