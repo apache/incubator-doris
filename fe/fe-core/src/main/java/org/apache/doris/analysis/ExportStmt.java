@@ -18,6 +18,7 @@
 package org.apache.doris.analysis;
 
 import org.apache.doris.catalog.Catalog;
+import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.FsBroker;
 import org.apache.doris.catalog.Partition;
@@ -28,21 +29,22 @@ import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
+import org.apache.doris.common.util.ParquetPropertyAnalyzer;
 import org.apache.doris.common.util.PrintableMap;
 import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
-
+import org.apache.doris.thrift.TFileFormatType;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Maps;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -61,7 +63,8 @@ public class ExportStmt extends StatementBase {
     private static final String DEFAULT_COLUMN_SEPARATOR = "\t";
     private static final String DEFAULT_LINE_DELIMITER = "\n";
     private static final String DEFAULT_COLUMNS = "";
-
+    private static final String FILE_FORMAT = "format";
+    private static final String SCHEMA = "schema";
 
     private TableName tblName;
     private List<String> partitions;
@@ -72,8 +75,13 @@ public class ExportStmt extends StatementBase {
     private String columnSeparator;
     private String lineDelimiter;
     private String columns ;
+    private TFileFormatType format;
+    private List<List<String>> schema = new ArrayList<>();
+    private Map<String, String> fileProperties = Maps.newHashMap();
 
     private TableRef tableRef;
+
+
 
     public ExportStmt(TableRef tableRef, Expr whereExpr, String path,
                       Map<String, String> properties, BrokerDesc brokerDesc) {
@@ -119,6 +127,18 @@ public class ExportStmt extends StatementBase {
 
     public String getColumnSeparator() {
         return this.columnSeparator;
+    }
+
+    public TFileFormatType getFileFormat() {
+        return this.format;
+    }
+
+    public List<List<String>> getSchema() {
+        return this.schema;
+    }
+
+    public Map<String, String> getFileProperties() {
+        return this.fileProperties;
     }
 
     public String getLineDelimiter() {
@@ -307,6 +327,75 @@ public class ExportStmt extends StatementBase {
         } else {
             // use session variables
             properties.put(TABLET_NUMBER_PER_TASK_PROP, String.valueOf(Config.export_tablet_num_per_task));
+        }
+
+        this.format = parsetFormat();
+
+        if (this.format == TFileFormatType.FORMAT_PARQUET) {
+            parseParquetProperties();
+        }
+    }
+
+    private void parseParquetProperties() throws AnalysisException {
+        // generate schema for user, when schema is not defined
+        String schema = properties.get(SCHEMA);
+        if (schema == null) {
+            // generate schema through user defined columns
+            if (this.columns != null) {
+                List<Column> tableColumns = getColumnFromDefinedColumns();
+                this.schema = ParquetPropertyAnalyzer.genSchema(tableColumns);
+            } else {
+                // generate schema through table's all columns
+                this.schema = ParquetPropertyAnalyzer.genSchema(this.tableRef.getTable());
+            }
+        } else {
+            this.schema = ParquetPropertyAnalyzer.parseSchema(properties.get(SCHEMA));
+            if (this.columns != null) {
+                List<Column> cols = getColumnFromDefinedColumns();
+                ParquetPropertyAnalyzer.checkProjectionFieldAndSchema(this.schema, cols);
+            } else {
+                ParquetPropertyAnalyzer.checkProjectionFieldAndSchema(this.schema, this.tableRef.getTable());
+            }
+        }
+        this.fileProperties = ParquetPropertyAnalyzer.parseFileProperties(properties, new HashSet<String>());
+    }
+
+    private List<Column> getColumnFromDefinedColumns() throws AnalysisException {
+        List<Column> tableColumns = new ArrayList<>();
+        this.columns = this.columns.replace(" ", "");
+        String[] cols = this.columns.split(",");
+        for (int i = 0; i < cols.length; i++) {
+            this.tableRef.getTable().readLock();
+            try {
+                Column tableColumn = this.tableRef.getTable().getColumn(cols[i]);
+                if (tableColumn == null) {
+                    throw new AnalysisException("column: " + cols[i] + " not exist in table: " +
+                            this.tableRef.getTable().getName());
+                }
+                tableColumns.add(tableColumn);
+            } finally {
+                this.tableRef.getTable().readUnlock();
+            }
+        }
+        return tableColumns;
+    }
+
+    private TFileFormatType parsetFormat() throws AnalysisException {
+        // parse format, default format is csv
+        String format = "";
+        if (properties.containsKey(FILE_FORMAT)) {
+            format = properties.get(FILE_FORMAT);
+        } else {
+            format = "csv";
+        }
+
+        switch (format) {
+            case "csv":
+                return TFileFormatType.FORMAT_CSV_PLAIN;
+            case "parquet":
+                return TFileFormatType.FORMAT_PARQUET;
+            default:
+                throw new AnalysisException("format:" + format + " is not supported.");
         }
     }
 
