@@ -188,6 +188,7 @@ module.exports = [
       "sql-mode",
       "time-zone",
       "variables",
+      "sql-block",
     ],
     sidebarDepth: 1,
   },
