@@ -829,6 +829,10 @@ public class StmtExecutor implements ProfileWriter {
                     channel.sendOnePacket(row);
                 }
                 context.updateReturnRows(batch.getBatch().getRows().size());
+                long selectLimit = context.getSessionVariable().getSqlSelectLimit();
+                if (selectLimit > 0 && context.getReturnRows() > selectLimit) {
+                    break;
+                }
             }
             if (batch.isEos()) {
                 break;
