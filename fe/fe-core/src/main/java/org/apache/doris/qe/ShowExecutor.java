@@ -18,6 +18,7 @@
 package org.apache.doris.qe;
 
 import org.apache.doris.analysis.AdminShowConfigStmt;
+import org.apache.doris.analysis.AdminShowDataSkewStmt;
 import org.apache.doris.analysis.AdminShowReplicaDistributionStmt;
 import org.apache.doris.analysis.AdminShowReplicaStatusStmt;
 import org.apache.doris.analysis.DescribeStmt;
@@ -292,6 +293,8 @@ public class ShowExecutor {
             handleShowPlugins();
         } else if (stmt instanceof ShowQueryProfileStmt) {
             handleShowQueryProfile();
+        } else if (stmt instanceof AdminShowDataSkewStmt) {
+            handleAdminShowDataSkew();
         } else {
             handleEmtpy();
         }
@@ -1919,6 +1922,16 @@ public class ShowExecutor {
         resultSet = new ShowResultSet(showCreateRoutineLoadStmt.getMetaData(), rows);
     }
 
+    private void handleAdminShowDataSkew() throws AnalysisException {
+        AdminShowDataSkewStmt showStmt = (AdminShowDataSkewStmt) stmt;
+        List<List<String>> results;
+        try {
+            results = MetadataViewer.getDataSkew(showStmt);
+        } catch (DdlException e) {
+            throw new AnalysisException(e.getMessage());
+        }
+        resultSet = new ShowResultSet(showStmt.getMetaData(), results);
+    }
 }
 
 
