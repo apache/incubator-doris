@@ -699,11 +699,11 @@ static Status get_hints(const TPaloScanRange& scan_range, int block_row_count,
         have_valid_range = true;
     }
 
-    if (have_key_range && have_segment_range)) {
-            return Status::InternalError(
-                    "fail to show hints by split range, mixed key range and segment range is not "
-                    "supported.");
-        }
+    if (have_key_range && have_segment_range) {
+        return Status::InternalError(
+                "fail to show hints by split range, mixed key range and segment range is not "
+                "supported.");
+    }
     *segment_split = have_segment_range;
 
     if (!have_valid_range) {
