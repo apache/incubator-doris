@@ -30,6 +30,7 @@
 #include "service/brpc.h"
 #include "util/thrift_util.h"
 #include "util/uid_util.h"
+#include "vec/runtime/vdata_stream_mgr.h"
 
 namespace doris {
 
@@ -285,6 +286,20 @@ void PInternalServiceImpl<T>::apply_filter(::google::protobuf::RpcController* co
     }
     st.to_protobuf(response->mutable_status());
 }
+
+template <typename T>
+void PInternalServiceImpl<T>::transmit_block(google::protobuf::RpcController* cntl_base,
+                                             const PTransmitDataParams* request,
+                                             PTransmitDataResult* response,
+                                             google::protobuf::Closure* done) {
+    VLOG_ROW << "transmit data: fragment_instance_id=" << print_id(request->finst_id())
+             << " node=" << request->node_id();
+    _exec_env->vstream_mgr()->transmit_block(request, &done);
+    if (done != nullptr) {
+        done->Run();
+    }
+}
+
 template class PInternalServiceImpl<PBackendService>;
 template class PInternalServiceImpl<palo::PInternalService>;
 
