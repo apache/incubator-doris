@@ -43,6 +43,8 @@ message PTransmitDataParams {
     // different per packet
     required int64 packet_seq = 7;
     optional PQueryStatistics query_statistics = 8;
+
+    optional PBlock block = 9;
 };
 
 message PTransmitDataResult {
@@ -341,5 +343,6 @@ service PBackendService {
     rpc clear_cache(PClearCacheRequest) returns (PCacheResponse);
     rpc merge_filter(PMergeFilterRequest) returns (PMergeFilterResponse);
     rpc apply_filter(PPublishFilterRequest) returns (PPublishFilterResponse);
+    rpc transmit_block(PTransmitDataParams) returns (PTransmitDataResult);
 };
 
