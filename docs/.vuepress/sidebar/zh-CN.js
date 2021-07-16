@@ -448,6 +448,7 @@ module.exports = [
               "SHOW MIGRATIONS",
               "SHOW PLUGINS",
               "SHOW TABLE STATUS",
+              "SHOW TRASH",
               "UNINSTALL PLUGIN",
             ],
           },
