@@ -1529,7 +1529,6 @@ public class Catalog {
         switch (metaHeader.getMetaFormat()) {
             case COR1:
                 return loadHeaderCOR1(dis, checksum);
-            case ETL1:
             default:
                 throw new DdlException("unsupported image format.");
         }
