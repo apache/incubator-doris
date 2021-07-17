@@ -2610,6 +2610,10 @@ show_param ::=
     {:
         RESULT = new ShowQueryProfileStmt(queryIdPath);
     :}
+    | KW_LOAD KW_PROFILE STRING_LITERAL:loadIdPath
+    {:
+        RESULT = new ShowLoadProfileStmt(loadIdPath);
+    :}
     ;
 
 opt_tmp ::=
