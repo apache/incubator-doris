@@ -377,7 +377,7 @@ Status ThreadPool::do_submit(std::shared_ptr<Runnable> r, ThreadPoolToken* token
     if (capacity_remaining < 1) {
         return Status::ServiceUnavailable(strings::Substitute(
                 "Thread pool is at capacity ($0/$1 tasks running, $2/$3 tasks queued)",
-                _num_threads + _num_threads_pending_start, _max_threads, _total_queued_tasks,
+                _num_threads + _num_threads_pending_start, _max_threads.load(), _total_queued_tasks.load(),
                 _max_queue_size));
     }
 
@@ -447,7 +447,7 @@ Status ThreadPool::do_submit(std::shared_ptr<Runnable> r, ThreadPoolToken* token
             }
             // If we failed to create a thread, but there are still some other
             // worker threads, log a warning message and continue.
-            LOG(ERROR) << "Thread pool failed to create thread: " << status.to_string();
+            LOG(WARNING) << "Thread pool failed to create thread: " << status.to_string();
         }
     }
 
@@ -484,9 +484,6 @@ void ThreadPool::dispatch_thread() {
     DCHECK_GT(_num_threads_pending_start, 0);
     _num_threads++;
     _num_threads_pending_start--;
-    // If we are one of the first '_min_threads' to start, we must be
-    // a "permanent" thread.
-    bool permanent = _num_threads <= _min_threads;
 
     // Owned by this worker thread and added/removed from _idle_threads as needed.
     IdleThread me(&_lock);
@@ -495,6 +492,10 @@ void ThreadPool::dispatch_thread() {
         // Note: Status::Aborted() is used to indicate normal shutdown.
         if (!_pool_status.ok()) {
             VLOG_CRITICAL << "DispatchThread exiting: " << _pool_status.to_string();
+            break;
+        }
+
+        if (_num_threads + _num_threads_pending_start > _max_threads) {
             break;
         }
 
@@ -511,21 +512,17 @@ void ThreadPool::dispatch_thread() {
                     _idle_threads.erase(_idle_threads.iterator_to(me));
                 }
             });
-            if (permanent) {
-                me.not_empty.wait();
-            } else {
-                if (!me.not_empty.wait_for(_idle_timeout)) {
-                    // After much investigation, it appears that pthread condition variables have
-                    // a weird behavior in which they can return ETIMEDOUT from timed_wait even if
-                    // another thread did in fact signal. Apparently after a timeout there is some
-                    // brief period during which another thread may actually grab the internal mutex
-                    // protecting the state, signal, and release again before we get the mutex. So,
-                    // we'll recheck the empty queue case regardless.
-                    if (_queue.empty()) {
+            if (!me.not_empty.wait_for(_idle_timeout)) {
+                // After much investigation, it appears that pthread condition variables have
+                // a weird behavior in which they can return ETIMEDOUT from timed_wait even if
+                // another thread did in fact signal. Apparently after a timeout there is some
+                // brief period during which another thread may actually grab the internal mutex
+                // protecting the state, signal, and release again before we get the mutex. So,
+                // we'll recheck the empty queue case regardless.
+                if (_queue.empty() && _num_threads + _num_threads_pending_start > _min_threads) {
                         VLOG_NOTICE << "Releasing worker thread from pool " << _name << " after "
                                 << _idle_timeout.ToMilliseconds() << "ms of idle time.";
                         break;
-                    }
                 }
             }
             continue;
@@ -608,6 +605,47 @@ void ThreadPool::check_not_pool_thread_unlocked() {
                 "name '$1' called pool function that would result in deadlock",
                 _name, current->name());
     }
+}
+
+Status ThreadPool::set_min_threads(int min_threads) {
+    if (min_threads <= _max_threads) {
+        _min_threads = min_threads;
+        if (min_threads > _num_threads + _num_threads_pending_start) {
+            int addition_threads = min_threads - _num_threads - _num_threads_pending_start;
+            _num_threads_pending_start += addition_threads;
+            for (int i = 0; i < addition_threads; i++) {
+                Status status = create_thread();
+                if (!status.ok()) {
+                    _num_threads_pending_start--;
+                    LOG(WARNING) << "Thread pool failed to create thread: " << status.to_string();
+                    return status;
+                }
+            }
+        }
+        return Status::OK();
+    }
+    return Status::InternalError("set thread pool min_threads failed");
+}
+
+Status ThreadPool::set_max_threads(int max_threads) {
+    if (_min_threads <= max_threads) {
+        _max_threads = max_threads;
+        if (_max_threads > _num_threads - _num_threads_pending_start) {
+            int addition_threads = _max_threads - _num_threads - _num_threads_pending_start;
+            addition_threads = std::min(addition_threads, _total_queued_tasks.load());
+            _num_threads_pending_start += addition_threads;
+            for (int i = 0; i < addition_threads; i++) {
+                Status status = create_thread();
+                if (!status.ok()) {
+                    _num_threads_pending_start--;
+                    LOG(WARNING) << "Thread pool failed to create thread: " << status.to_string();
+                    return status;
+                }
+            }
+        }
+        return Status::OK();
+    }
+    return Status::InternalError("set thread pool max_threads failed");
 }
 
 std::ostream& operator<<(std::ostream& o, ThreadPoolToken::State s) {
