@@ -75,10 +75,20 @@ public class RangePartitionPruner implements PartitionPruner {
         Column keyColumn = partitionColumns.get(columnIdx);
         PartitionColumnFilter filter = partitionColumnFilters.get(keyColumn.getName());
         if (null == filter) {
-            minKey.pushColumn(LiteralExpr.createInfinity(Type.fromPrimitiveType(keyColumn.getDataType()), false),
+            // If there is no condition in the first column, there is no need to add the infinity range for all columns.
+            int pushMinCount;
+            int pushMaxCount;
+            if (columnIdx == 0) {
+                minKey.pushColumn(LiteralExpr.createInfinity(Type.fromPrimitiveType(keyColumn.getDataType()), false),
                     keyColumn.getDataType());
-            maxKey.pushColumn(LiteralExpr.createInfinity(Type.fromPrimitiveType(keyColumn.getDataType()), true),
+                maxKey.pushColumn(LiteralExpr.createInfinity(Type.fromPrimitiveType(keyColumn.getDataType()), true),
                     keyColumn.getDataType());
+                pushMinCount = 1;
+                pushMaxCount = 1;
+            } else {
+                pushMinCount = minKey.fillWithInfinity(partitionColumns, false);
+                pushMaxCount = maxKey.fillWithInfinity(partitionColumns, true);
+            }
             Collection<Long> result = null;
             try {
                 result = Lists.newArrayList(
@@ -86,8 +96,12 @@ public class RangePartitionPruner implements PartitionPruner {
             } catch (IllegalArgumentException e) {
                 result = Lists.newArrayList();
             }
-            minKey.popColumn();
-            maxKey.popColumn();
+            for (; pushMinCount > 0; pushMinCount--) {
+                minKey.popColumn();
+            }
+            for (; pushMaxCount > 0; pushMaxCount--) {
+                maxKey.popColumn();
+            }
             return result;
         }
         InPredicate inPredicate = filter.getInPredicate();
@@ -116,36 +130,19 @@ public class RangePartitionPruner implements PartitionPruner {
             // no in predicate
             BoundType lowerType = filter.lowerBoundInclusive ? BoundType.CLOSED : BoundType.OPEN;
             BoundType upperType = filter.upperBoundInclusive ? BoundType.CLOSED : BoundType.OPEN;
-            int pushMinCount = 0;
-            int pushMaxCount = 0;
-            int lastColumnId = partitionColumns.size() - 1;
+            int pushMinCount;
+            int pushMaxCount;
             if (filter.lowerBound != null) {
                 minKey.pushColumn(filter.lowerBound, keyColumn.getDataType());
-                pushMinCount++;
-                if (filter.lowerBoundInclusive && columnIdx != lastColumnId) {
-                    Column column = partitionColumns.get(columnIdx + 1);
-                    Type type = Type.fromPrimitiveType(column.getDataType());
-                    minKey.pushColumn(LiteralExpr.createInfinity(type, false), column.getDataType());
-                    pushMinCount++;
-                }
+                pushMinCount = 1 + minKey.fillWithInfinity(partitionColumns, !filter.lowerBoundInclusive);
             } else {
-                Type type = Type.fromPrimitiveType(keyColumn.getDataType());
-                minKey.pushColumn(LiteralExpr.createInfinity(type, false), keyColumn.getDataType());
-                pushMinCount++;
+                pushMinCount = minKey.fillWithInfinity(partitionColumns, false);
             }
             if (filter.upperBound != null) {
                 maxKey.pushColumn(filter.upperBound, keyColumn.getDataType());
-                pushMaxCount++;
-                if (filter.upperBoundInclusive && columnIdx != lastColumnId) {
-                    Column column = partitionColumns.get(columnIdx + 1);
-                    maxKey.pushColumn(LiteralExpr.createInfinity(Type.fromPrimitiveType(column.getDataType()), true),
-                            column.getDataType());
-                    pushMaxCount++;
-                }
+                pushMaxCount = 1 + maxKey.fillWithInfinity(partitionColumns, filter.upperBoundInclusive);
             } else {
-                maxKey.pushColumn(LiteralExpr.createInfinity(Type.fromPrimitiveType(keyColumn.getDataType()), true),
-                        keyColumn.getDataType());
-                pushMaxCount++;
+                pushMaxCount = maxKey.fillWithInfinity(partitionColumns, true);
             }
 
             Collection<Long> result = null;
